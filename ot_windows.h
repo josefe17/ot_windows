@@ -26,6 +26,72 @@ extern "C" {
 #define UP      2
 #define DOWN    3
 
+typedef enum _OUTPUT_REQUEST
+{
+	NONE,
+	UP_PRESSED,
+	DOWN_PRESSED,
+	UP_RELEASED_AUTO,
+	DOWN_RELEASED_AUTO,
+	UP_RELEASED_STOP,
+	DOWN_RELEASED_STOP
+} OUTPUT_REQUEST;
+
+/*FSM STATUS*/
+typedef enum _WINDOW_FSM_STATE
+{
+	IDLE,
+	BLOCKED,
+	AUTO_DOWN,
+	AUTO_UP,
+	MAN_DOWN,
+	MAN_UP,
+	CENTRAL_CLOSE,
+	AUTHORIZATION_OFF
+} WINDOW_FSM_STATE;
+
+typedef enum _AUTHORIZATION_FSM_STATE
+{
+	OFF,
+	ARMED,
+	OVERRIDE
+} AUTHORIZATION_FSM_STATE;
+
+typedef enum _OUTPUT_FSM_STATE
+{	
+	IDLE,
+	
+	UP_PRESSED_UP_LOW,
+	UP_PRESSED_UP_LOW_DELAY,
+	UP_PRESSED_DOWN_LOW,
+	UP_PRESSED_DOWN_LOW_DELAY,
+	
+	DOWN_PRESSED_DOWN_LOW,
+	DOWN_PRESSED_DOWN_LOW_DELAY,
+	DOWN_PRESSED_UP_LOW,
+	DOWN_PRESSED_UP_LOW_DELAY,
+	
+	UP_RELEASED_AUTO_DOWN_HIGH,
+	UP_RELEASED_AUTO_DOWN_HIGH_DELAY,
+	UP_RELEASED_AUTO_UP_HIGH,
+	UP_RELEASED_AUTO_UP_HIGH_DELAY,
+	
+	DOWN_RELEASED_AUTO_UP_HIGH,
+	DOWN_RELEASED_AUTO_UP_HIGH_DELAY,
+	DOWN_RELEASED_AUTO_DOWN_HIGH,
+	DOWN_RELEASED_AUTO_DOWN_HIGH_DELAY,
+	
+	UP_RELEASED_STOP_UP_HIGH,
+	UP_RELEASED_STOP_UP_HIGH_DELAY,
+	UP_RELEASED_STOP_DOWN_HIGH,
+	UP_RELEASED_STOP_DOWN_HIGH_DELAY,
+
+	DOWN_RELEASED_STOP_DOWN_HIGH,
+	DOWN_RELEASED_STOP_DOWN_HIGH_DELAY,
+	DOWN_RELEASED_STOP_UP_HIGH,
+	DOWN_RELEASED_STOP_UP_HIGH_DELAY
+} OUTPUT_FSM_STATE;
+
 typedef struct _FLAGS 
 {
     unsigned char up_sw : 1;
@@ -38,30 +104,26 @@ typedef struct _FLAGS
     unsigned char ot_timer_enable : 1;
 } FLAGS;
 
-typedef enum _OUTPUT
-{
-	NONE,
-	UP_PRESSED,
-	DOWN_PRESSED,
-	UP_RELEASED_AUTO,
-	DOWN_RELEASED_AUTO,
-	UP_RELEASED_STOP,
-	DOWN_RELEASED_STOP
-} OUTPUT;
-
 typedef struct window 
 {
     unsigned char id;
-    unsigned char current_state;
-    unsigned char next_state;
+    WINDOW_FSM_STATE current_state;
+    WINDOW_FSM_STATE next_state;
     volatile int ot_timer_counter;
     int ot_timer_max_count;        
     volatile FLAGS flags;
-	OUTPUT output;
+	OUTPUT_REQUEST output;
+	OUTPUT_FSM_STATE outputState;
+	OUTPUT_FSM_STATE outputNextState;
+	AUTHORIZATION_FSM_STATE authorizationState;
+	AUTHORIZATION_FSM_STATE authorizationNextState;
 } window_t;
 
 void window_fsm_fire(window_t*);
 inline void windows_fsm_fire_all(void);
+
+void output_fsm_fire(window_t*);
+void authorization_fsm_fire(window_t*);
 
 void windows_init(void);
 window_t get_window(unsigned char);
@@ -69,7 +131,7 @@ window_t* get_window_pointer(unsigned char);
 unsigned char set_window_id(unsigned char, unsigned char);
 
 inline void set_OT_timer(window_t*, int);
-inline void set_output(window_t*, OUTPUT);
+inline void set_output(window_t*, OUTPUT_REQUEST);
 
 inline void clear_input_flags(volatile FLAGS*);
 

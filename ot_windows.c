@@ -4,20 +4,6 @@
 /*Data for FSM*/
 window_t windows[NUM_WINDOWS];
 
-/*FSM STATUS*/
-enum
-{
-    IDLE,
-	BLOCKED,
-    AUTO_DOWN,
-    AUTO_UP,
-    MAN_DOWN,
-    MAN_UP,
-	CENTRAL_CLOSE,
-	AUTHORIZATION_OFF
-    };
-
-
 void window_fsm_fire(window_t* current_window)
 {
     current_window -> current_state = current_window -> next_state; // Updates state
@@ -31,37 +17,37 @@ void window_fsm_fire(window_t* current_window)
 			{                
                 clear_input_flags(&(current_window -> flags));
 				turn_off_OT_timer(&(current_window -> flags));             
-                current_window -> next_state = IDLE;
+                current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 				break;
             }
 			if (check_all_released(current_window) && check_central_close(current_window)) // Central close
 			{
 				clear_input_flags(&(current_window->flags));
 				set_authorization(&(current_window->flags), ON);
-				set_output(current_window, OUTPUT.UP_PRESSED);
-				current_window -> next_state = CENTRAL_CLOSE;
+				set_output(current_window, OUTPUT_REQUEST.UP_PRESSED);
+				current_window -> next_state = WINDOW_FSM_STATE.CENTRAL_CLOSE;
 				break;				
 			}
             if (check_up_and_no_down(current_window)) //Up botton pressed
 			{
                 clear_input_flags(&(current_window->flags));
 				set_OT_timer(current_window, OT_TIMER_COUNT);
-                set_output(current_window, OUTPUT.UP_PRESSED);
-                current_window -> next_state = MAN_UP;
+                set_output(current_window, OUTPUT_REQUEST.UP_PRESSED);
+                current_window -> next_state = WINDOW_FSM_STATE.MAN_UP;
 				break;
             }
             if (check_down_and_no_up(current_window)) //Down botton pressed
 			{
                 clear_input_flags(&(current_window->flags));
 				set_OT_timer(current_window, OT_TIMER_COUNT);
-                set_output(current_window, OUTPUT.DOWN_PRESSED);           
-                current_window -> next_state = MAN_DOWN;
+                set_output(current_window, OUTPUT_REQUEST.DOWN_PRESSED);           
+                current_window -> next_state = WINDOW_FSM_STATE.MAN_DOWN;
 				break;
             }
 			clear_input_flags(&(current_window->flags));
 			turn_off_OT_timer(&(current_window -> flags));			
-			set_output(current_window, OUTPUT.NONE);
-            current_window -> next_state = BLOCKED;
+			set_output(current_window, OUTPUT_REQUEST.NONE);
+            current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
 			break;			
         }		
 		case MAN_DOWN:
@@ -69,7 +55,7 @@ void window_fsm_fire(window_t* current_window)
 			if (check_down_and_no_up(current_window))
 			{
 				clear_input_flags(&(current_window->flags));
-				current_window->next_state = MAN_DOWN;
+				current_window->next_state = WINDOW_FSM_STATE.MAN_DOWN;
 				break;
 			}
 			if (check_all_released(current_window))
@@ -78,16 +64,16 @@ void window_fsm_fire(window_t* current_window)
 				{
 					clear_input_flags(&(current_window -> flags));
 					turn_off_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT.DOWN_RELEASED_STOP);
-					current_window -> next_state = IDLE;
+					set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_STOP);
+					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 					break;
 				}
 				else // Auto mode
 				{
 					clear_input_flags(&(current_window -> flags));
 					turn_off_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT.DOWN_RELEASED_AUTO);
-					current_window -> next_state = IDLE;
+					set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_AUTO);
+					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 					break;
 				}
 			}
@@ -95,13 +81,13 @@ void window_fsm_fire(window_t* current_window)
 			{
 				clear_input_flags(&(current_window -> flags));
 				turn_off_OT_timer(&(current_window -> flags));
-				current_window->next_state = AUTO_DOWN;
+				current_window->next_state = WINDOW_FSM_STATE.AUTO_DOWN;
 				break;
 			}
 			clear_input_flags(&(current_window -> flags));
 			turn_off_OT_timer(&(current_window -> flags));
-			set_output(current_window, OUTPUT.DOWN_RELEASED_STOP);
-			current_window -> next_state = BLOCKED;
+			set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_STOP);
+			current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
 			break;
 		}		
         case MAN_UP:
@@ -109,7 +95,7 @@ void window_fsm_fire(window_t* current_window)
             if (check_up_and_no_down(current_window))
 			{
                 clear_input_flags(&(current_window->flags));
-                current_window->next_state = MAN_UP;
+                current_window->next_state = WINDOW_FSM_STATE.MAN_UP;
                 break;
             }
             if (check_all_released(current_window))
@@ -118,16 +104,16 @@ void window_fsm_fire(window_t* current_window)
 				{
 					clear_input_flags(&(current_window -> flags));
 					turn_off_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT.UP_RELEASED_STOP);
-					current_window -> next_state = IDLE;
+					set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_STOP);
+					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 					break;
 				}
 				else // Auto mode
 				{
 					clear_input_flags(&(current_window -> flags));
 					turn_off_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT.UP_RELEASED_AUTO);
-					current_window -> next_state = IDLE;
+					set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_AUTO);
+					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 					break;
 				}
             }
@@ -135,13 +121,13 @@ void window_fsm_fire(window_t* current_window)
 			{
                 clear_input_flags(&(current_window -> flags));
                 turn_off_OT_timer(&(current_window -> flags));
-                current_window->next_state = AUTO_UP;
+                current_window->next_state = WINDOW_FSM_STATE.AUTO_UP;
                 break;
             }
 			clear_input_flags(&(current_window -> flags));
 			turn_off_OT_timer(&(current_window -> flags));
-			set_output(current_window, OUTPUT.UP_RELEASED_STOP);
-			current_window -> next_state = BLOCKED;
+			set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_STOP);
+			current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
 			break;
         }
         case AUTO_DOWN:
@@ -149,21 +135,21 @@ void window_fsm_fire(window_t* current_window)
             if (check_down(current_window)) // Keep polling
 			{
                 clear_input_flags(&(current_window->flags));
-                current_window -> next_state = AUTO_DOWN;
+                current_window -> next_state = WINDOW_FSM_STATE.AUTO_DOWN;
                 break;
             }
 
             if (check_no_up_and_no_down(current_window)) // Button fully released
 			{
                 clear_input_flags(&(current_window->flags));
-                set_output(current_window, OUTPUT.DOWN_RELEASED_AUTO);
-                current_window -> next_state = IDLE;
+                set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_AUTO);
+                current_window -> next_state = WINDOW_FSM_STATE.IDLE;
                 break;
             }
 			clear_input_flags(&(current_window -> flags));
 			turn_off_OT_timer(&(current_window -> flags));
-			set_output(current_window, OUTPUT.DOWN_RELEASED_STOP);
-			current_window -> next_state = BLOCKED;
+			set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_STOP);
+			current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
 			break;
         }
         case AUTO_UP:
@@ -171,21 +157,21 @@ void window_fsm_fire(window_t* current_window)
 	        if (check_up(current_window)) // Keep polling
 	        {
 		        clear_input_flags(&(current_window->flags));
-		        current_window -> next_state = AUTO_UP;
+		        current_window -> next_state = WINDOW_FSM_STATE.AUTO_UP;
 		        break;
 	        }
 
 	        if (check_no_up_and_no_down(current_window)) // Button fully released
 	        {
 		        clear_input_flags(&(current_window->flags));
-		        set_output(current_window, OUTPUT.UP_RELEASED_AUTO);
-		        current_window -> next_state = IDLE;
+		        set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_AUTO);
+		        current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 		        break;
 	        }
 	        clear_input_flags(&(current_window -> flags));
 	        turn_off_OT_timer(&(current_window -> flags));
-	        set_output(current_window, OUTPUT.UP_RELEASED_STOP);
-	        current_window -> next_state = BLOCKED;
+	        set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_STOP);
+	        current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
 	        break;
         } 
         case BLOCKED: // Wrong button sequence stops controller untill all buttons are released
@@ -194,20 +180,20 @@ void window_fsm_fire(window_t* current_window)
             if (check_any_pressed(current_window))
 			{
 				clear_input_flags(&(current_window -> flags));
-				current_window -> next_state = BLOCKED;
+				current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
 			}
 			else
 			{
 				clear_input_flags(&(current_window -> flags));
-				current_window -> next_state = IDLE;
+				current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 			} 
             break;
         }
         case CENTRAL_CLOSE: //Handles second part of button sequence for commanding auto-lift mode
 		{
 			clear_input_flags(&(current_window -> flags));
-			set_output(current_window, OUTPUT.UP_RELEASED_AUTO);
-			current_window -> next_state = AUTHORIZATION_OFF;
+			set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_AUTO);
+			current_window -> next_state = WINDOW_FSM_STATE.AUTHORIZATION_OFF;
 			break;
         }
 		case AUTHORIZATION_OFF: // Disables authorization override signal once auto-lift sequence is over (and thus valid)
@@ -216,17 +202,19 @@ void window_fsm_fire(window_t* current_window)
 			{
 				clear_input_flags(&(current_window -> flags));
 				set_authorization(&(current_window->flags), OFF);
-				current_window -> next_state = IDLE;
+				current_window -> next_state = WINDOW_FSM_STATE.IDLE;
 			}
 			else
 			{		
 				clear_input_flags(&(current_window -> flags));		
-				current_window -> next_state = AUTHORIZATION_OFF;	
+				current_window -> next_state = WINDOW_FSM_STATE.AUTHORIZATION_OFF;	
 			}			
 			break;
 		}
     }
 }
+
+void 
 
 inline void windows_fsm_fire_all()
 {
@@ -237,13 +225,27 @@ inline void windows_fsm_fire_all()
     }
 }
 
+
+void authorization_fsm_fire(window_t* currentWindow)
+{
+	current_window -> authorizationState = current_window -> next_state; // Updates state	
+	switch (current_window -> current_state)
+	{
+	}
+}
+
+
 void windows_init(void)
 {
     unsigned char i;
     for (i = 0; i < NUM_WINDOWS; i++) 
 	{
-        windows[i].current_state = IDLE;
-        windows[i].next_state = IDLE;
+        windows[i].current_state = WINDOW_FSM_STATE.IDLE;
+        windows[i].next_state = WINDOW_FSM_STATE.IDLE;
+		windows[i].outputState = OUTPUT_FSM_STATE.IDLE;
+		windows[i].outputNextState = OUTPUT_FSM_STATE.IDLE;
+		windows[i].authorizationState = AUTHORIZATION_FSM_STATE.OFF;
+		windows[i].authorizationNextState = AUTHORIZATION_FSM_STATE.OFF;
         windows[i].ot_timer_counter = 0;
         windows[i].timeout_timer_counter = 0;
         windows[i].current_sense_timer_counter = 0;
@@ -261,6 +263,8 @@ void windows_init(void)
         windows[i].flags.timeout_enable = OFF;
     }
 }
+
+
 
 window_t get_window(unsigned char window)
 {    
@@ -282,7 +286,7 @@ unsigned char set_window_id(unsigned char window_index, unsigned char id)
     return 0;
 }
 
-inline void set_output(window_t* current_window, OUTPUT o)
+inline void set_output(window_t* current_window, OUTPUT_REQUEST o)
 {
 	(current_window -> output) = o;
 }

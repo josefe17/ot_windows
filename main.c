@@ -1,7 +1,5 @@
 
 #include "ot_windows.h"
-#include "config.h"
-#include <xc.h>
 
 
 void main (void){

@@ -8,499 +8,240 @@ window_t windows[NUM_WINDOWS];
 enum
 {
     IDLE,
-    BLOCKED_BOTH,
-    BLOCKED_UP,
-    BLOCKED_DOWN,
-    START_DOWN,
-    START_UP,
+	BLOCKED,
     AUTO_DOWN,
     AUTO_UP,
     MAN_DOWN,
-    MAN_UP
+    MAN_UP,
+	CENTRAL_CLOSE,
+	AUTHORIZATION_OFF
     };
 
 
-void window_fsm_fire(window_t* current_window){
-
-    current_window->current_state=current_window->next_state; // Updates state
-
-    switch (current_window->current_state) {
-        case IDLE:
+void window_fsm_fire(window_t* current_window)
+{
+    current_window -> current_state = current_window -> next_state; // Updates state
+	
+    switch (current_window -> current_state)
+	{
+		default:
+		case IDLE:
         {
-            if (((current_window->flags).up_sw && (current_window->flags).down_sw) || (!(current_window->flags).up_sw && !(current_window->flags).down_sw)) {
-                clear_safety_flags(&(current_window->flags));
+            if (check_all_released(current_window) && !check_central_close(current_window)) // Idle
+			{                
+                clear_input_flags(&(current_window -> flags));
+				turn_off_OT_timer(&(current_window -> flags));             
+                current_window -> next_state = IDLE;
+				break;
+            }
+			if (check_all_released(current_window) && check_central_close(current_window)) // Central close
+			{
+				clear_input_flags(&(current_window->flags));
+				set_authorization(&(current_window->flags), ON);
+				set_output(current_window, OUTPUT.UP_PRESSED);
+				current_window -> next_state = CENTRAL_CLOSE;
+				break;				
+			}
+            if (check_up_and_no_down(current_window)) //Up botton pressed
+			{
                 clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = IDLE;
+				set_OT_timer(current_window, OT_TIMER_COUNT);
+                set_output(current_window, OUTPUT.UP_PRESSED);
+                current_window -> next_state = MAN_UP;
+				break;
             }
-            if ((current_window->flags).up_sw && !(current_window->flags).down_sw) { //Up botton pressed
+            if (check_down_and_no_up(current_window)) //Down botton pressed
+			{
                 clear_input_flags(&(current_window->flags));
-                set_output(&(current_window->flags), UP);
-                set_comparators(&(current_window->flags), UP);
-                set_safety_timer(current_window, TIMEOUT_UP);
-                set_OT_timer(current_window, OT_TIMER_COUNT);
-                current_window->next_state = START_UP;
+				set_OT_timer(current_window, OT_TIMER_COUNT);
+                set_output(current_window, OUTPUT.DOWN_PRESSED);           
+                current_window -> next_state = MAN_DOWN;
+				break;
             }
-            if (!(current_window->flags).up_sw && (current_window->flags).down_sw) { //Down botton pressed
-                clear_input_flags(&(current_window->flags));
-                set_output(&(current_window->flags),DOWN);
-                set_comparators(&(current_window->flags),DOWN);
-                set_safety_timer(current_window,TIMEOUT_DOWN);
-                set_OT_timer(current_window, OT_TIMER_COUNT);
-                current_window->next_state = START_DOWN;
-            }
-            break;
-        }
-        case START_DOWN:
-        {
-            if (!(current_window->flags).current_sense && (current_window->flags).current_sense_timer_enable){
-                clear_safety_flags(&(current_window->flags));
-                turn_off_CS_timer(&(current_window->flags));                
-                current_window->next_state=START_DOWN;
-                break;
-            }       
-            if ((current_window->flags).current_sense && !(current_window->flags).current_sense_timer_enable) {
-                clear_CS_flags(&(current_window->flags));
-                set_CS_timer(current_window, CS_TIMER_COUNT);
-                current_window->next_state = START_DOWN;
-                break; 
-            }
-            if ((current_window->flags).timeout || 
-                ((current_window->flags).current_sense && (current_window->flags).current_sense_timer_rollover )){ // If safety timeout stops window
-                clear_safety_flags(&(current_window->flags));
-                if ((current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_UP;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_DOWN;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = IDLE;
-                    break;
-                }
-                if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_BOTH;
-                    break;
-                }
-            }
-            if (!(current_window->flags).up_sw) {
-                if (!(current_window->flags).ot_timer_rollover && !(current_window->flags).down_sw) { //If time hasn't passed and button is released goto OTD
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), DOWN);
-                    turn_off_OT_timer(&(current_window->flags));
-                    current_window->next_state = AUTO_DOWN;
-                    break;
-                }
-                if ((current_window->flags).ot_timer_rollover && (current_window->flags).down_sw) { // If time has passed and button is still pressed goto MAN_DOWN
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), DOWN);
-                    turn_off_OT_timer(&(current_window->flags));
-                    current_window->next_state = MAN_DOWN;
-                    break;
-                }
-                if (!(current_window->flags).ot_timer_rollover && (current_window->flags).down_sw) { //If time hasn't passed and button is still pressed keep polling on START_DOWN
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), DOWN);
-                    current_window->next_state = START_DOWN;
-                    break;
-                }
-                if ((current_window->flags).ot_timer_rollover && !(current_window->flags).down_sw) { //If button is released and time has passed goto IDLE state
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = IDLE;
-                    break;
-                }
-            } else {
-                if ((current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_BOTH; // If both pressed go to safety state
-                    break;
-                } else {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags)); // Allows changing rolling sense
-                    current_window->next_state = IDLE;
-                    break;
-                }
-            }
-        }
-             
-        case START_UP:
-        {
-            if (!(current_window->flags).current_sense && (current_window->flags).current_sense_timer_enable) {
-                clear_safety_flags(&(current_window->flags));
-                turn_off_CS_timer(&(current_window->flags));
-                current_window->next_state = START_UP;
-                break;
-            }
-            if ((current_window->flags).current_sense && !(current_window->flags).current_sense_timer_enable) {
-                clear_CS_flags(&(current_window->flags));
-                set_CS_timer(current_window, CS_TIMER_COUNT);
-                current_window->next_state = START_UP;
-                break;
-            }
-            
-            if ((current_window->flags).timeout || 
-                ((current_window->flags).current_sense && (current_window->flags).current_sense_timer_rollover))  { // If a safety event has been trigged goto safety states
-                clear_safety_flags(&(current_window->flags));
-                if ((current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_UP;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_DOWN;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = IDLE;
-                    break;
-                }
-                if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_BOTH;
-                    break;
-                }
-            }
-            if (!(current_window->flags).down_sw) {
-                if (!(current_window->flags).ot_timer_rollover && !(current_window->flags).up_sw) { //If time hasn't passed and button is released goto OTD
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), UP);
-                    turn_off_OT_timer(&(current_window->flags));
-                    current_window->next_state = AUTO_UP;
-                    break;
-                }
-                if ((current_window->flags).ot_timer_rollover && (current_window->flags).up_sw) { // If time has passed and button is still pressed goto MAN_UP
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), UP);
-                    turn_off_OT_timer(&(current_window->flags));
-                    current_window->next_state = MAN_UP;
-                    break;
-                }
-                if (!(current_window->flags).ot_timer_rollover && (current_window->flags).up_sw) { //If time hasn't passed and button is still pressed keep polling on START_UP
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), UP);
-                    current_window->next_state = START_UP;
-                    break;
-                }
-                if ((current_window->flags).ot_timer_rollover && !(current_window->flags).up_sw) { //If button is released and time has passed goto IDLE state
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = IDLE;
-                    break;
-                }
-            } else {
-                if ((current_window->flags).up_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags)); // If both pressed go to safety state
-                    current_window->next_state = BLOCKED_BOTH;
-                    break;
-                } else {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags)); // Allows changing rolling sense
-                    current_window->next_state = IDLE;
-                    break;
-                }
-            }
-        }
-
-        case AUTO_DOWN:
-        {
-            if (!(current_window->flags).current_sense && (current_window->flags).current_sense_timer_enable) {
-                clear_safety_flags(&(current_window->flags));
-                turn_off_CS_timer(&(current_window->flags));
-                current_window->next_state = AUTO_DOWN;
-                break;
-            }
-            if ((current_window->flags).current_sense && !(current_window->flags).current_sense_timer_enable) {
-                clear_CS_flags(&(current_window->flags));
-                set_CS_timer(current_window, CS_TIMER_COUNT);
-                current_window->next_state = AUTO_DOWN;
-                break;
-            }
-            if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                if ((current_window->flags).timeout ||                   
-                        ((current_window->flags).current_sense && (current_window->flags).current_sense_timer_rollover)) { // If safety timeout stops window                    
-                    clear_safety_flags(&(current_window->flags));
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags)); // Rolling has ended
-                    current_window->next_state = IDLE;
-                    break;
-                } else { // Keep polling
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), DOWN);
-                    current_window->next_state = AUTO_DOWN;
-                    break;
-                }
-            }
-            if ((current_window->flags).up_sw && !(current_window->flags).down_sw) { // Up is pressed to stop rolling
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_UP;
-                break;
-            }
-            if (!(current_window->flags).up_sw && (current_window->flags).down_sw) { // Down is pressed to stop rolling
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_DOWN;
-                break;
-            }
-            if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_BOTH;
-                break;
-            }
-        }
-
-        case AUTO_UP:
-        {
-            if (!(current_window->flags).current_sense && (current_window->flags).current_sense_timer_enable) {
-                clear_safety_flags(&(current_window->flags));
-                turn_off_CS_timer(&(current_window->flags));
-                current_window->next_state = AUTO_UP;
-                break;
-            }
-            if ((current_window->flags).current_sense && !(current_window->flags).current_sense_timer_enable) {
-                clear_CS_flags(&(current_window->flags));
-                set_CS_timer(current_window, CS_TIMER_COUNT);
-                current_window->next_state = AUTO_UP;
-                break;
-            }
-            if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                if ((current_window->flags).timeout ||
-                        ((current_window->flags).current_sense && (current_window->flags).current_sense_timer_rollover)) {
-                    clear_safety_flags(&(current_window->flags));
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags)); // Rolling has ended
-                    current_window->next_state = IDLE;
-                    break;
-                } else { // Keep polling
-                    clear_input_flags(&(current_window->flags));
-                    set_output(&(current_window->flags), UP);
-                    current_window->next_state = AUTO_UP;
-                    break;
-                }
-            }
-            if ((current_window->flags).up_sw && !(current_window->flags).down_sw) { // Up is pressed to stop rolling
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_UP;
-                break;
-            }
-            if (!(current_window->flags).up_sw && (current_window->flags).down_sw) { // Down is pressed to stop rolling
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_DOWN;
-                break;
-            }
-            if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_BOTH;
-                break;
-            }
-        }
-
-        case MAN_DOWN:
-        {
-            if (!(current_window->flags).current_sense && (current_window->flags).current_sense_timer_enable) {
-                clear_safety_flags(&(current_window->flags));
-                turn_off_CS_timer(&(current_window->flags));
-                current_window->next_state = MAN_DOWN;
-                break;
-            }
-            if ((current_window->flags).current_sense && !(current_window->flags).current_sense_timer_enable) {
-                clear_CS_flags(&(current_window->flags));
-                set_CS_timer(current_window, CS_TIMER_COUNT);
-                current_window->next_state = MAN_DOWN;
-                break;
-            }
-            if ((current_window->flags).timeout || 
-                    ((current_window->flags).current_sense && (current_window->flags).current_sense_timer_rollover)) {
-                clear_safety_flags(&(current_window->flags));
-                if ((current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_UP;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_DOWN;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = IDLE;
-                    break;
-                }
-                if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_BOTH;
-                    break;
-                }
-            }
-            if ((current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = IDLE;
-                break;
-            }
-            if (!(current_window->flags).up_sw && (current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                current_window->next_state = MAN_DOWN;
-                break;
-            }
-            if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = IDLE;
-                break;
-            }
-            if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_BOTH;
-                break;
-            }
-        }
-
+			clear_input_flags(&(current_window->flags));
+			turn_off_OT_timer(&(current_window -> flags));			
+			set_output(current_window, OUTPUT.NONE);
+            current_window -> next_state = BLOCKED;
+			break;			
+        }		
+		case MAN_DOWN:
+		{
+			if (check_down_and_no_up(current_window))
+			{
+				clear_input_flags(&(current_window->flags));
+				current_window->next_state = MAN_DOWN;
+				break;
+			}
+			if (check_all_released(current_window))
+			{
+				if (check_ot_time_rollover(current_window)) // Manual mode
+				{
+					clear_input_flags(&(current_window -> flags));
+					turn_off_OT_timer(&(current_window -> flags));
+					set_output(current_window, OUTPUT.DOWN_RELEASED_STOP);
+					current_window -> next_state = IDLE;
+					break;
+				}
+				else // Auto mode
+				{
+					clear_input_flags(&(current_window -> flags));
+					turn_off_OT_timer(&(current_window -> flags));
+					set_output(current_window, OUTPUT.DOWN_RELEASED_AUTO);
+					current_window -> next_state = IDLE;
+					break;
+				}
+			}
+			if (check_up_and_down(current_window)) //Auto mode double-click button
+			{
+				clear_input_flags(&(current_window -> flags));
+				turn_off_OT_timer(&(current_window -> flags));
+				current_window->next_state = AUTO_DOWN;
+				break;
+			}
+			clear_input_flags(&(current_window -> flags));
+			turn_off_OT_timer(&(current_window -> flags));
+			set_output(current_window, OUTPUT.DOWN_RELEASED_STOP);
+			current_window -> next_state = BLOCKED;
+			break;
+		}		
         case MAN_UP:
         {
-            if (!(current_window->flags).current_sense && (current_window->flags).current_sense_timer_enable) {
-                clear_safety_flags(&(current_window->flags));
-                turn_off_CS_timer(&(current_window->flags));
-                current_window->next_state = MAN_UP;
-                break;
-            }
-            if ((current_window->flags).current_sense && !(current_window->flags).current_sense_timer_enable) {
-                clear_CS_flags(&(current_window->flags));
-                set_CS_timer(current_window, CS_TIMER_COUNT);
-                current_window->next_state = MAN_UP;
-                break;
-            }
-            if ((current_window->flags).timeout ||
-                    ((current_window->flags).current_sense && (current_window->flags).current_sense_timer_rollover)) {
-                clear_safety_flags(&(current_window->flags));
-                if ((current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_UP;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_DOWN;
-                    break;
-                }
-                if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = IDLE;
-                    break;
-                }
-                if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
-                    clear_input_flags(&(current_window->flags));
-                    turn_off(&(current_window->flags));
-                    current_window->next_state = BLOCKED_BOTH;
-                    break;
-                }
-            }
-            if ((current_window->flags).up_sw && !(current_window->flags).down_sw) {
+            if (check_up_and_no_down(current_window))
+			{
                 clear_input_flags(&(current_window->flags));
                 current_window->next_state = MAN_UP;
                 break;
             }
-            if (!(current_window->flags).up_sw && (current_window->flags).down_sw) {
-                clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = IDLE;
+            if (check_all_released(current_window))
+			{
+				if (check_ot_time_rollover(current_window)) // Manual mode
+				{
+					clear_input_flags(&(current_window -> flags));
+					turn_off_OT_timer(&(current_window -> flags));
+					set_output(current_window, OUTPUT.UP_RELEASED_STOP);
+					current_window -> next_state = IDLE;
+					break;
+				}
+				else // Auto mode
+				{
+					clear_input_flags(&(current_window -> flags));
+					turn_off_OT_timer(&(current_window -> flags));
+					set_output(current_window, OUTPUT.UP_RELEASED_AUTO);
+					current_window -> next_state = IDLE;
+					break;
+				}
+            }
+            if (check_up_and_down(current_window)) //Auto mode double-click button
+			{
+                clear_input_flags(&(current_window -> flags));
+                turn_off_OT_timer(&(current_window -> flags));
+                current_window->next_state = AUTO_UP;
                 break;
             }
-            if (!(current_window->flags).up_sw && !(current_window->flags).down_sw) {
+			clear_input_flags(&(current_window -> flags));
+			turn_off_OT_timer(&(current_window -> flags));
+			set_output(current_window, OUTPUT.UP_RELEASED_STOP);
+			current_window -> next_state = BLOCKED;
+			break;
+        }
+        case AUTO_DOWN:
+        {			
+            if (check_down(current_window)) // Keep polling
+			{
                 clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = IDLE;
+                current_window -> next_state = AUTO_DOWN;
                 break;
             }
-            if ((current_window->flags).up_sw && (current_window->flags).down_sw) {
+
+            if (check_no_up_and_no_down(current_window)) // Button fully released
+			{
                 clear_input_flags(&(current_window->flags));
-                turn_off(&(current_window->flags));
-                current_window->next_state = BLOCKED_BOTH;
+                set_output(current_window, OUTPUT.DOWN_RELEASED_AUTO);
+                current_window -> next_state = IDLE;
                 break;
             }
+			clear_input_flags(&(current_window -> flags));
+			turn_off_OT_timer(&(current_window -> flags));
+			set_output(current_window, OUTPUT.DOWN_RELEASED_STOP);
+			current_window -> next_state = BLOCKED;
+			break;
         }
+        case AUTO_UP:
+        {
+	        if (check_up(current_window)) // Keep polling
+	        {
+		        clear_input_flags(&(current_window->flags));
+		        current_window -> next_state = AUTO_UP;
+		        break;
+	        }
 
-        case BLOCKED_DOWN:{
-            
-            turn_off(&(current_window->flags));
-            if ((current_window->flags).down_sw) {
-                current_window->next_state = BLOCKED_DOWN;
-            }
-            else {
-                current_window->next_state = IDLE;
-            }
-            clear_input_flags(&(current_window->flags));
+	        if (check_no_up_and_no_down(current_window)) // Button fully released
+	        {
+		        clear_input_flags(&(current_window->flags));
+		        set_output(current_window, OUTPUT.UP_RELEASED_AUTO);
+		        current_window -> next_state = IDLE;
+		        break;
+	        }
+	        clear_input_flags(&(current_window -> flags));
+	        turn_off_OT_timer(&(current_window -> flags));
+	        set_output(current_window, OUTPUT.UP_RELEASED_STOP);
+	        current_window -> next_state = BLOCKED;
+	        break;
+        } 
+        case BLOCKED: // Wrong button sequence stops controller untill all buttons are released
+		{            
+            turn_off_OT_timer(&(current_window -> flags));
+            if (check_any_pressed(current_window))
+			{
+				clear_input_flags(&(current_window -> flags));
+				current_window -> next_state = BLOCKED;
+			}
+			else
+			{
+				clear_input_flags(&(current_window -> flags));
+				current_window -> next_state = IDLE;
+			} 
             break;
         }
-
-        case BLOCKED_UP:{
-            turn_off(&(current_window->flags));
-            if ((current_window->flags).up_sw) {
-                current_window->next_state = BLOCKED_UP;
-            }
-            else {
-                current_window->next_state = IDLE;
-            }
-            clear_input_flags(&(current_window->flags));
-            break;
+        case CENTRAL_CLOSE: //Handles second part of button sequence for commanding auto-lift mode
+		{
+			clear_input_flags(&(current_window -> flags));
+			set_output(current_window, OUTPUT.UP_RELEASED_AUTO);
+			current_window -> next_state = AUTHORIZATION_OFF;
+			break;
         }
-
-        case BLOCKED_BOTH:{
-            turn_off(&(current_window->flags));
-            if ((current_window->flags).up_sw || (current_window->flags).down_sw) {
-                current_window->next_state = BLOCKED_BOTH;
-            }
-            else {
-                current_window->next_state = IDLE;
-            }
-            clear_input_flags(&(current_window->flags));
-            break;
-        }
+		case AUTHORIZATION_OFF: // Disables authorization override signal once auto-lift sequence is over (and thus valid)
+		{
+			if (check_central_close_over(current_window)) // Required as up and down lines and authorization line are managed independently
+			{
+				clear_input_flags(&(current_window -> flags));
+				set_authorization(&(current_window->flags), OFF);
+				current_window -> next_state = IDLE;
+			}
+			else
+			{		
+				clear_input_flags(&(current_window -> flags));		
+				current_window -> next_state = AUTHORIZATION_OFF;	
+			}			
+			break;
+		}
     }
 }
 
-inline void windows_fsm_fire_all(){
+inline void windows_fsm_fire_all()
+{
     unsigned char i;
-    for(i=0;i<NUM_WINDOWS;i++){
+    for(i = 0; i < NUM_WINDOWS; ++i)
+	{
         window_fsm_fire(&windows[i]);
     }
 }
 
-void windows_init(void) {
+void windows_init(void)
+{
     unsigned char i;
-    for (i = 0; i < NUM_WINDOWS; i++) {
+    for (i = 0; i < NUM_WINDOWS; i++) 
+	{
         windows[i].current_state = IDLE;
         windows[i].next_state = IDLE;
         windows[i].ot_timer_counter = 0;
@@ -521,114 +262,133 @@ void windows_init(void) {
     }
 }
 
-window_t get_window(unsigned char window){    
+window_t get_window(unsigned char window)
+{    
         return windows[window];
 }
 
-window_t* get_window_pointer (unsigned char window) {
+window_t* get_window_pointer (unsigned char window)
+{
         return (windows+window);
 }
 
-unsigned char set_window_id(unsigned char window_index, unsigned char id) {
-    if (window_index < NUM_WINDOWS) {
+unsigned char set_window_id(unsigned char window_index, unsigned char id)
+{
+    if (window_index < NUM_WINDOWS)
+	{
         windows[window_index].id = id;
         return 1;
     }
     return 0;
 }
 
-inline void set_output(volatile FLAGS* flags, unsigned char dir) {
-    switch (dir) {
-        case UP:
-        {
-            flags->output_down = OFF;
-            flags->output_up = ON;
-            return;
-        }
-        case DOWN:
-        {
-            flags->output_up = OFF;
-            flags->output_down = ON;
-            return;
-        }
-        case OFF:
-        default:
-        {
-            flags->output_up = OFF;
-            flags->output_down = OFF;
-            return;
-        }
-    }
-
+inline void set_output(window_t* current_window, OUTPUT o)
+{
+	(current_window -> output) = o;
 }
 
-inline void set_comparators(volatile FLAGS* flags, unsigned char dir) {
-    flags->current_sense_enable = ON;
+unsigned char check_up_and_no_down(window_t* current_window) //yellow
+{
+	return (((current_window->flags).up_sw && !(current_window->flags).down_sw) || 
+			((current_window->flags).up_rem_sw && !(current_window->flags).down_rem_sw));
+}
+
+unsigned char check_down_and_no_up(window_t* current_window) //green
+{
+	return ((!(current_window->flags).up_sw && (current_window->flags).down_sw) ||
+			(!(current_window->flags).up_rem_sw && (current_window->flags).down_rem_sw));
+}
+
+unsigned char check_up_and_down(window_t* current_window) //orange
+{
+	return (((current_window->flags).up_sw && (current_window->flags).down_sw) ||
+			((current_window->flags).up_rem_sw && (current_window->flags).down_rem_sw));
+}
+
+unsigned char check_all_released(window_t* current_window) // blue
+{
+	return (!(current_window->flags).up_sw &&
+			!(current_window->flags).down_sw &&
+			!(current_window->flags).up_rem_sw && 
+			!(current_window->flags).down_rem_sw);
+}
+
+unsigned char check_any_pressed(window_t* current_window) //red
+{
+	return ((current_window->flags).up_sw || 
+			(current_window->flags).down_sw ||
+			(current_window->flags).up_rem_sw ||
+			(current_window->flags).down_rem_sw);
+}
+
+unsigned char check_no_up_and_no_down(window_t* current_window) // gray
+{
+	return ((!(current_window->flags).up_sw && !(current_window->flags).down_sw) ||
+			(!(current_window->flags).up_rem_sw && !(current_window->flags).down_rem_sw));
+}
+
+unsigned char check_up(window_t* current_window) //pink
+{
+	return ((current_window->flags).up_sw || 
+			(current_window->flags).up_rem_sw);
+}
+
+unsigned char check_down(window_t* current_window) // same as pink for down
+{
+	return ((current_window->flags).down_sw ||
+			(current_window->flags).down_rem_sw);
+}
+
+unsigned char check_ot_time_rollover(window_t* current_window)
+{
+	return (current_window -> flags).ot_timer_rollover;
+}
+
+unsigned char check_central_close(window_t* current_window)
+{
+	return (current_window -> flags).cclose_in;
+}
+
+unsigned char check_central_close_over(window_t* current_window)
+{
+	return (current_window -> flags).cclose_over;
+}
+
+inline void set_OT_timer(window_t* current_window, int time)
+{
+    current_window -> ot_timer_max_count = time;
+    current_window -> ot_timer_counter = 0;
+    current_window -> flags.ot_timer_rollover = 0;
+    current_window -> flags.ot_timer_enable = ON;
     return;
 }
 
-inline void set_safety_timer(window_t* current_window, int timeout) {
-    current_window->timeout_timer_max_count = timeout;
-    current_window->timeout_timer_counter = 0;
-    current_window->flags.timeout = 0;
-    current_window->flags.timeout_enable = ON;
+
+inline void clear_input_flags(volatile FLAGS* flags)
+{
+	flags -> ot_timer_rollover = 0;
+    flags -> down_sw = 0;
+    flags -> up_sw = 0;
+	flags -> up_rem_sw = 0;
+	flags -> down_rem_sw = 0;
+	flags -> cclose_in = 0;
     return;
 }
 
-inline void set_OT_timer(window_t* current_window, int time) {
-    current_window->ot_timer_max_count = time;
-    current_window->ot_timer_counter = 0;
-    current_window->flags.ot_timer_rollover = 0;
-    current_window->flags.ot_timer_enable = ON;
+inline void turn_off(volatile FLAGS* flags)
+{
+    flags -> output_up = OFF;
+    flags -> output_down = OFF;
+    flags -> current_sense_enable = OFF;
+    flags -> ot_timer_enable = OFF;
+    flags -> current_sense_timer_enable = OFF;
+    flags -> timeout_enable = OFF;
     return;
 }
 
-inline void set_CS_timer(window_t* current_window, int time) {
-    current_window->current_sense_timer_max_count = time;
-    current_window->current_sense_timer_counter = 0;
-    current_window->flags.current_sense_timer_rollover = 0;
-    current_window->flags.current_sense_timer_enable = ON;
-    return;
-}
-
-/*Cleans safety events flags*/
-inline void clear_safety_flags(volatile FLAGS* flags){
-    flags->ot_timer_rollover=0;
-    flags->current_sense=0;
-    flags->current_sense_timer_rollover=0;
-    flags->timeout=0;
-    return;
-}
-
-inline void clear_input_flags(volatile FLAGS* flags){
-    flags->down_sw=0;
-    flags->up_sw=0;
-    return;
-}
-
-inline void clear_CS_flags(volatile FLAGS* flags){
-    flags->current_sense=0;
-    flags->current_sense_timer_rollover=0;
-    return;
-}
-
-inline void turn_off(volatile FLAGS* flags){
-    flags->output_up=OFF;
-    flags->output_down=OFF;
-    flags->current_sense_enable=OFF;
-    flags->ot_timer_enable=OFF;
-    flags->current_sense_timer_enable=OFF;
-    flags->timeout_enable=OFF;
-    return;
-}
-
-inline void turn_off_OT_timer(volatile FLAGS* flags){
-    flags->ot_timer_enable=OFF;
-    return;
-}
-
-inline void turn_off_CS_timer (volatile FLAGS* flags){
-    flags->current_sense_timer_enable=OFF;
+inline void turn_off_OT_timer(volatile FLAGS* flags)
+{
+    flags -> ot_timer_enable = OFF;
     return;
 }
 
@@ -669,7 +429,10 @@ void port_init(void){
     WINDOW2_ROLLDOWN=OFF;
 }
 
-void read_port(void){
+void read_port(void)
+{
+	// TODO
+	// Update and add mismatch
     windows[0].flags.up_sw=(!WINDOW1_SW_UP1 || !WINDOW1_SW_UP2);
     windows[0].flags.down_sw=(!WINDOW1_SW_DOWN1 || !WINDOW1_SW_DOWN2);
     if (windows[0].flags.current_sense_enable){
@@ -694,15 +457,11 @@ void set_port(void){
 
 void set_timer_flags(void){
     unsigned char i;
-    for (i = 0; i < NUM_WINDOWS; i++) {
-        if (windows[i].timeout_timer_counter >= windows[i].timeout_timer_max_count) {
-            windows[i].flags.timeout = ON;
-        }
-        if (windows[i].ot_timer_counter >= windows[i].ot_timer_max_count) {
+    for (i = 0; i < NUM_WINDOWS; i++) 
+	{
+        if (windows[i].ot_timer_counter >= windows[i].ot_timer_max_count)
+		{
             windows[i].flags.ot_timer_rollover = ON;
-        }
-        if (windows[i].current_sense_timer_counter>=windows[i].current_sense_timer_max_count){
-            windows[i].flags.current_sense_timer_rollover = ON;
         }
     }
 }

@@ -94,14 +94,21 @@ typedef enum _OUTPUT_FSM_STATE
 
 typedef struct _FLAGS 
 {
-    unsigned char up_sw : 1;
-    unsigned char down_sw : 1;
-	unsigned char up_rem_sw : 1;
-	unsigned char down_rem_sw : 1;
-	unsigned char cclose_in : 1;
-	unsigned char cclose_over : 1;
-    unsigned char ot_timer_rollover : 1;
-    unsigned char ot_timer_enable : 1;
+    unsigned char up_sw : 1; //
+    unsigned char down_sw : 1;//
+	unsigned char up_rem_sw : 1;//
+	unsigned char down_rem_sw : 1;//
+	unsigned char cclose_in : 1;//
+	unsigned char cclose_over : 1;//
+	unsigned char authorization_in: 1;
+	unsigned char authorization_on: 1;
+	unsigned char authorization_off: 1;
+    unsigned char ot_timer_rollover : 1;//
+    unsigned char ot_timer_enable : 1;//
+	unsigned char output_timer_rollover: 1;
+	unsigned char output_timer_enable: 1;
+	unsigned char authorization_timer_rollover : 1;
+	unsigned char authorization_timer_enable : 1;
 } FLAGS;
 
 typedef struct window 
@@ -110,13 +117,18 @@ typedef struct window
     WINDOW_FSM_STATE current_state;
     WINDOW_FSM_STATE next_state;
     volatile int ot_timer_counter;
-    int ot_timer_max_count;        
-    volatile FLAGS flags;
+    int ot_timer_max_count;  
 	OUTPUT_REQUEST output;
 	OUTPUT_FSM_STATE outputState;
 	OUTPUT_FSM_STATE outputNextState;
+	volatile int output_timer_counter;
+	int output_timer_max_count;
 	AUTHORIZATION_FSM_STATE authorizationState;
 	AUTHORIZATION_FSM_STATE authorizationNextState;
+	volatile int authorization_timer_counter;
+	int authorization_timer_max_count;
+    volatile FLAGS flags;
+
 } window_t;
 
 void window_fsm_fire(window_t*);
@@ -130,33 +142,44 @@ window_t get_window(unsigned char);
 window_t* get_window_pointer(unsigned char);
 unsigned char set_window_id(unsigned char, unsigned char);
 
-inline void set_OT_timer(window_t*, int);
-inline void set_output(window_t*, OUTPUT_REQUEST);
-
-inline void clear_input_flags(volatile FLAGS*);
-
-inline void turn_off(volatile FLAGS*);
-inline void turn_off_OT_timer(volatile FLAGS*);
-
 void timer_init(void);
 void port_init(void);
 void read_port(void);
 void set_port(void);
 void set_timer_flags(void);
-void timer_interrupt(void);
+volatile void timer_interrupt(void);
 
-// Input functions
-unsigned char check_up_and_no_down(window_t* current_window); //yellow
-unsigned char check_down_and_no_up(window_t* current_window); //green
-unsigned char check_up_and_down(window_t* current_window); //orange
-unsigned char check_all_released(window_t* current_window); // blue
-unsigned char check_any_pressed(window_t* current_window); //red
-unsigned char check_no_up_and_no_down(window_t* current_window); // gray
-unsigned char check_up(window_t* current_window); //pink
-unsigned char check_down(window_t* current_window); // same as pink for down
-unsigned char check_ot_time_rollover(window_t* current_window);
-unsigned char check_central_close(window_t* current_window);
-unsigned char check_central_close_over(window_t* current_window);
+// Window FSM input functions
+inline void clear_window_fsm_input_flags(volatile FLAGS*);
+unsigned char check_up_and_no_down(window_t*); //yellow
+unsigned char check_down_and_no_up(window_t*); //green
+unsigned char check_up_and_down(window_t*); //orange
+unsigned char check_all_released(window_t*); // blue
+unsigned char check_any_pressed(window_t*); //red
+unsigned char check_no_up_and_no_down(window_t*); // gray
+unsigned char check_up(window_t*); //pink
+unsigned char check_down(window_t*); // same as pink for down
+unsigned char check_ot_time_rollover(window_t*);
+unsigned char check_central_close(window_t*);
+unsigned char check_central_close_over(window_t*);
+
+// Window FSM output functions
+inline void set_output(window_t*, OUTPUT_REQUEST);
+inline void set_window_OT_timer(window_t*, int);
+inline void turn_off_window_OT_timer(volatile FLAGS*);
+void set_authorization_request_flags(window_t*, unsigned char);
+
+//Authorization FSM input functions
+inline void clear_authorization_fsm_input_flags(volatile FLAGS*);
+unsigned char check_authorization_input(window_t*);
+unsigned char check_authorization_override_request(window_t*);
+unsigned char check_authorization_release_request(window_t*);
+unsigned char check_authorization_time_rollover(window_t*);
+
+// Authorization FSM output functions
+inline void write_authorization(window_t*, unsigned char);
+inline void set_authorization_timer(window_t*, int);
+inline void turn_off_authorization_timer(volatile FLAGS*);
 
 #ifdef	__cplusplus
 }

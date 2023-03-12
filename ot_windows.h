@@ -20,6 +20,7 @@ extern "C" {
 #define RIGHT   'r'
 #define LEFT    'l'
 
+#define BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS 15
 
 #define OFF     0
 #define ON      1
@@ -57,59 +58,66 @@ typedef enum _AUTHORIZATION_FSM_STATE
 	OVERRIDE
 } AUTHORIZATION_FSM_STATE;
 
-typedef enum _OUTPUT_FSM_STATE
-{	
-	IDLE,
+typedef enum _BUTTON_SEQUENCE_STATE
+{		
+	UP_PRESSED_UP_LOW_1,
+	UP_PRESSED_UP_LOW_DELAY_2,
+	UP_PRESSED_DOWN_LOW_3,
+	UP_PRESSED_DOWN_LOW_DELAY_4,
 	
-	UP_PRESSED_UP_LOW,
-	UP_PRESSED_UP_LOW_DELAY,
-	UP_PRESSED_DOWN_LOW,
-	UP_PRESSED_DOWN_LOW_DELAY,
+	DOWN_PRESSED_DOWN_LOW_1,
+	DOWN_PRESSED_DOWN_LOW_DELAY_2,
+	DOWN_PRESSED_UP_LOW_3,
+	DOWN_PRESSED_UP_LOW_DELAY_4,
 	
-	DOWN_PRESSED_DOWN_LOW,
-	DOWN_PRESSED_DOWN_LOW_DELAY,
-	DOWN_PRESSED_UP_LOW,
-	DOWN_PRESSED_UP_LOW_DELAY,
+	UP_RELEASED_AUTO_DOWN_HIGH_1,
+	UP_RELEASED_AUTO_DOWN_HIGH_DELAY_2,
+	UP_RELEASED_AUTO_UP_HIGH_3,
+	UP_RELEASED_AUTO_UP_HIGH_DELAY_4,
 	
-	UP_RELEASED_AUTO_DOWN_HIGH,
-	UP_RELEASED_AUTO_DOWN_HIGH_DELAY,
-	UP_RELEASED_AUTO_UP_HIGH,
-	UP_RELEASED_AUTO_UP_HIGH_DELAY,
+	DOWN_RELEASED_AUTO_UP_HIGH_1,
+	DOWN_RELEASED_AUTO_UP_HIGH_DELAY_2,
+	DOWN_RELEASED_AUTO_DOWN_HIGH_3,
+	DOWN_RELEASED_AUTO_DOWN_HIGH_DELAY_4,
 	
-	DOWN_RELEASED_AUTO_UP_HIGH,
-	DOWN_RELEASED_AUTO_UP_HIGH_DELAY,
-	DOWN_RELEASED_AUTO_DOWN_HIGH,
-	DOWN_RELEASED_AUTO_DOWN_HIGH_DELAY,
-	
-	UP_RELEASED_STOP_UP_HIGH,
-	UP_RELEASED_STOP_UP_HIGH_DELAY,
-	UP_RELEASED_STOP_DOWN_HIGH,
-	UP_RELEASED_STOP_DOWN_HIGH_DELAY,
+	UP_RELEASED_STOP_UP_HIGH_1,
+	UP_RELEASED_STOP_UP_HIGH_DELAY_2,
+	UP_RELEASED_STOP_DOWN_HIGH_3,
+	UP_RELEASED_STOP_DOWN_HIGH_DELAY_4,
 
-	DOWN_RELEASED_STOP_DOWN_HIGH,
-	DOWN_RELEASED_STOP_DOWN_HIGH_DELAY,
-	DOWN_RELEASED_STOP_UP_HIGH,
-	DOWN_RELEASED_STOP_UP_HIGH_DELAY
+	DOWN_RELEASED_STOP_DOWN_HIGH_1,
+	DOWN_RELEASED_STOP_DOWN_HIGH_DELAY_2,
+	DOWN_RELEASED_STOP_UP_HIGH_3,
+	DOWN_RELEASED_STOP_UP_HIGH_DELAY_4
+} BUTTON_SEQUENCE_STATE;
+
+typedef enum _OUTPUT_FSM_STATE
+{
+	IDLE,
+	FIRST, // Delay
+	SECOND, // Second action
+	THIRD // Second delay
 } OUTPUT_FSM_STATE;
 
 typedef struct _FLAGS 
 {
-    unsigned char up_sw : 1; //
-    unsigned char down_sw : 1;//
-	unsigned char up_rem_sw : 1;//
-	unsigned char down_rem_sw : 1;//
-	unsigned char cclose_in : 1;//
-	unsigned char cclose_over : 1;//
+    unsigned char up_sw : 1; 
+    unsigned char down_sw : 1;
+	unsigned char up_rem_sw : 1;
+	unsigned char down_rem_sw : 1;
+	unsigned char cclose_in : 1;
+	unsigned char cclose_over : 1;	
 	unsigned char authorization_in: 1;
 	unsigned char authorization_on: 1;
 	unsigned char authorization_off: 1;
-    unsigned char ot_timer_rollover : 1;//
-    unsigned char ot_timer_enable : 1;//
+    unsigned char ot_timer_rollover : 1;
+    unsigned char ot_timer_enable : 1;
 	unsigned char output_timer_rollover: 1;
 	unsigned char output_timer_enable: 1;
 	unsigned char authorization_timer_rollover : 1;
 	unsigned char authorization_timer_enable : 1;
 } FLAGS;
+
 
 typedef struct window 
 {
@@ -119,6 +127,7 @@ typedef struct window
     volatile int ot_timer_counter;
     int ot_timer_max_count;  
 	OUTPUT_REQUEST output;
+	OUTPUT_REQUEST output_cache;
 	OUTPUT_FSM_STATE outputState;
 	OUTPUT_FSM_STATE outputNextState;
 	volatile int output_timer_counter;
@@ -131,9 +140,9 @@ typedef struct window
 
 } window_t;
 
-void window_fsm_fire(window_t*);
 inline void windows_fsm_fire_all(void);
 
+void window_fsm_fire(window_t*);
 void output_fsm_fire(window_t*);
 void authorization_fsm_fire(window_t*);
 
@@ -168,6 +177,20 @@ inline void set_output(window_t*, OUTPUT_REQUEST);
 inline void set_window_OT_timer(window_t*, int);
 inline void turn_off_window_OT_timer(volatile FLAGS*);
 void set_authorization_request_flags(window_t*, unsigned char);
+
+// Output FSM input functions
+OUTPUT_REQUEST check_output_request(window_t*);
+void cache_output_request(window_t*);
+unsigned char check_output_time_rollover(window_t*);
+
+// Output FSM output functions
+// Use inline void set_output(window_t*, OUTPUT_REQUEST) to clear input flags
+inline void write_up(window_t*, unsigned char);
+inline void write_down(window_t*, unsigned char);
+inline void set_central_close_in_progress(volatile FLAGS*);
+inline void clear_central_close_in_progress(volatile FLAGS*);
+inline void set_output_timer(window_t*, int);
+inline void turn_off_output_timer(volatile FLAGS*);
 
 //Authorization FSM input functions
 inline void clear_authorization_fsm_input_flags(volatile FLAGS*);

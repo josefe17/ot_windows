@@ -1,24 +1,24 @@
 
+#define F_CPU 16000000UL
+
 #include "ot_windows.h"
 
+window_t myWindow;
 
-void main (void){
-    //Oscillator configurations
-    OSCCONbits.IRCF=0b110; //  4MHz, Config bits source
-    OSCCONbits.SCS=0b11;   //   Int OSC
-    port_init();
-    windows_init();
-    timer_init();
-    GIE=ON;
-    while(1){
-        read_port();
-        set_timer_flags();
-        windows_fsm_fire_all();
-        set_port();
+int main (void)
+{
+	//TODO
+    //Oscillator configurations	  
+    ot_window_init(&myWindow);
+    sei();
+    while(1)
+	{
+		ot_window_run(&myWindow);
     }
-   
+	return 0;   
 }
 
-void interrupt ISR(void){
+ISR(TIMER0_COMPA_vect)
+{
     timer_interrupt();
 }

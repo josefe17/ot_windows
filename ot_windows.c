@@ -1,75 +1,53 @@
 
 #include "ot_windows.h"
+#include "ports.h"
+#include "timer.h"
 
-/*Data for FSM*/
-window_t windows[NUM_WINDOWS];
+volatile unsigned char timer_flag;
 
-window_t get_window(unsigned char window)
+void ot_window_init(window_t* current_window)
 {
-	return windows[window];
+	// GPIO init
+	port_init();
+	// Timer init
+	timer_init(TIMER0_PRESCALER_FOR_1MS_TICK_WITH_16MHZ, TIMER0_COUNT_FOR_1MS_TICK_WITH_16MHZ);
+	// Window FSM
+	current_window -> current_state = IDLE;
+	current_window -> next_state = IDLE;
+	current_window -> ot_timer_counter = 0;
+	current_window -> flags.up_sw = OFF;
+	current_window -> flags.down_sw = OFF;
+	current_window -> flags.up_rem_sw = OFF;
+	current_window -> flags.down_rem_sw = OFF;
+	current_window -> flags.cclose_in = OFF;
+	current_window -> flags.cclose_over = OFF;
+	current_window -> flags.ot_timer_rollover = OFF;
+	current_window -> flags.ot_timer_enable = OFF;
+	// Output FSM
+	current_window -> outputState = ZERO;
+	current_window -> outputNextState = ZERO;
+	current_window -> output_timer_counter = 0;
+	current_window -> output = NONE;
+	current_window -> flags.output_timer_rollover = OFF;
+	current_window -> flags.output_timer_enable = OFF;
+	// Authorization FSM
+	current_window -> authorizationState = RELEASED;
+	current_window -> authorizationNextState = RELEASED;
+	current_window -> authorization_timer_counter = 0;
+	current_window -> flags.authorization_in = OFF;
+	current_window -> flags.authorization_on = OFF;
+	current_window -> flags.authorization_off = OFF;
+	current_window -> flags.authorization_timer_rollover = OFF;
+	current_window -> flags.authorization_timer_enable = OFF;	
 }
 
-window_t* get_window_pointer (unsigned char window)
-{
-	return (windows+window);
-}
-
-unsigned char set_window_id(unsigned char window_index, unsigned char id)
-{
-	if (window_index < NUM_WINDOWS)
-	{
-		windows[window_index].id = id;
-		return 1;
-	}
-	return 0;
-}
-
-void windows_init(void)
-{
-	unsigned char i;
-	for (i = 0; i < NUM_WINDOWS; i++)
-	{
-		// Window FSM
-		windows[i].current_state = WINDOW_FSM_STATE.IDLE;
-		windows[i].next_state = WINDOW_FSM_STATE.IDLE;
-		windows[i].ot_timer_counter = 0;
-		windows[i].flags.up_sw = OFF;
-		windows[i].flags.down_sw = OFF;
-		windows[i].flags.up_rem_sw = OFF;
-		windows[i].flags.down_rem_sw = OFF;
-		windows[i].flags.cclose_in = OFF;
-		windows[i].flags.cclose_over = OFF;
-		windows[i].flags.ot_timer_rollover = OFF;
-		windows[i].flags.ot_timer_enable = OFF;
-		// Output FSM
-		windows[i].outputState = OUTPUT_FSM_STATE.IDLE;
-		windows[i].outputNextState = OUTPUT_FSM_STATE.IDLE;
-		windows[i].output_timer_counter = 0;
-		windows[i].output = OUTPUT_REQUEST.NONE;
-		windows[i].flags.output_timer_rollover = OFF;
-		windows[i].flags.output_timer_enable = OFF;
-		// Authorization FSM
-		windows[i].authorizationState = AUTHORIZATION_FSM_STATE.OFF;
-		windows[i].authorizationNextState = AUTHORIZATION_FSM_STATE.OFF;
-		windows[i].authorization_timer_counter = 0;
-		windows[i].flags.authorization_in = OFF;
-		windows[i].flags.authorization_on = OFF;
-		windows[i].flags.authorization_off = OFF;
-		windows[i].flags.authorization_timer_rollover = OFF;
-		windows[i].flags.authorization_timer_enable = OFF;
-	}
-}
-
-inline void windows_fsm_fire_all()
-{
-	unsigned char i;
-	for(i = 0; i < NUM_WINDOWS; ++i)
-	{
-		// fire input fsm
-		window_fsm_fire(&windows[i]);
-		authorization_fsm_fire(&windows[i]);
-		output_fsm_fire(&windows[i]);
-	}
+void ot_window_run(window_t* current_window)
+{		
+	read_port(current_window);
+	set_timer_flags(current_window);
+	window_fsm_fire(current_window);
+	authorization_fsm_fire(current_window);
+	output_fsm_fire(current_window);
 }
 
 void window_fsm_fire(window_t* current_window)
@@ -79,51 +57,51 @@ void window_fsm_fire(window_t* current_window)
     switch (current_window -> current_state)
 	{
 		default:
-		case WINDOW_FSM_STATE.IDLE:
+		case IDLE:
         {
             if (check_all_released(current_window) && !check_central_close(current_window)) // Idle
 			{                
                 clear_window_fsm_input_flags(&(current_window -> flags));
 				turn_off_window_OT_timer(&(current_window -> flags));             
-                current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+                current_window -> next_state = IDLE;
 				break;
             }
 			if (check_all_released(current_window) && check_central_close(current_window)) // Central close
 			{
 				clear_window_fsm_input_flags(&(current_window->flags));
-				set_authorization_request_flags(&(current_window->flags), ON);
-				set_output(current_window, OUTPUT_REQUEST.UP_PRESSED);
-				current_window -> next_state = WINDOW_FSM_STATE.CENTRAL_CLOSE;
+				set_authorization_request_flags(current_window, ON);
+				set_output(current_window, UP_PRESSED);
+				current_window -> next_state = CENTRAL_CLOSE;
 				break;				
 			}
             if (check_up_and_no_down(current_window)) //Up botton pressed
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
-				set_window_OT_timer(current_window, OT_TIMER_COUNT);
-                set_output(current_window, OUTPUT_REQUEST.UP_PRESSED);
-                current_window -> next_state = WINDOW_FSM_STATE.MAN_UP;
+				set_window_OT_timer(current_window, OT_TIMER_COUNT_MS);
+                set_output(current_window, UP_PRESSED);
+                current_window -> next_state = MAN_UP;
 				break;
             }
             if (check_down_and_no_up(current_window)) //Down botton pressed
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
-				set_window_OT_timer(current_window, OT_TIMER_COUNT);
-                set_output(current_window, OUTPUT_REQUEST.DOWN_PRESSED);           
-                current_window -> next_state = WINDOW_FSM_STATE.MAN_DOWN;
+				set_window_OT_timer(current_window, OT_TIMER_COUNT_MS);
+                set_output(current_window, DOWN_PRESSED);           
+                current_window -> next_state = MAN_DOWN;
 				break;
             }
 			clear_window_fsm_input_flags(&(current_window->flags));
 			turn_off_window_OT_timer(&(current_window -> flags));			
-			set_output(current_window, OUTPUT_REQUEST.NONE);
-            current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
+			set_output(current_window, NONE);
+            current_window -> next_state = BLOCKED;
 			break;			
         }		
-		case WINDOW_FSM_STATE.MAN_DOWN:
+		case MAN_DOWN:
 		{
 			if (check_down_and_no_up(current_window))
 			{
 				clear_window_fsm_input_flags(&(current_window->flags));
-				current_window->next_state = WINDOW_FSM_STATE.MAN_DOWN;
+				current_window->next_state = MAN_DOWN;
 				break;
 			}
 			if (check_all_released(current_window))
@@ -132,16 +110,16 @@ void window_fsm_fire(window_t* current_window)
 				{
 					clear_window_fsm_input_flags(&(current_window -> flags));
 					turn_off_window_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_STOP);
-					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+					set_output(current_window, DOWN_RELEASED_STOP);
+					current_window -> next_state = IDLE;
 					break;
 				}
 				else // Auto mode
 				{
 					clear_window_fsm_input_flags(&(current_window -> flags));
 					turn_off_window_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_AUTO);
-					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+					set_output(current_window, DOWN_RELEASED_AUTO);
+					current_window -> next_state = IDLE;
 					break;
 				}
 			}
@@ -149,21 +127,21 @@ void window_fsm_fire(window_t* current_window)
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
 				turn_off_window_OT_timer(&(current_window -> flags));
-				current_window->next_state = WINDOW_FSM_STATE.AUTO_DOWN;
+				current_window->next_state = AUTO_DOWN;
 				break;
 			}
 			clear_window_fsm_input_flags(&(current_window -> flags));
 			turn_off_window_OT_timer(&(current_window -> flags));
-			set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_STOP);
-			current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
+			set_output(current_window, DOWN_RELEASED_STOP);
+			current_window -> next_state = BLOCKED;
 			break;
 		}		
-        case WINDOW_FSM_STATE.MAN_UP:
+        case MAN_UP:
         {
             if (check_up_and_no_down(current_window))
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
-                current_window->next_state = WINDOW_FSM_STATE.MAN_UP;
+                current_window->next_state = MAN_UP;
                 break;
             }
             if (check_all_released(current_window))
@@ -172,16 +150,16 @@ void window_fsm_fire(window_t* current_window)
 				{
 					clear_window_fsm_input_flags(&(current_window -> flags));
 					turn_off_window_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_STOP);
-					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+					set_output(current_window, UP_RELEASED_STOP);
+					current_window -> next_state = IDLE;
 					break;
 				}
 				else // Auto mode
 				{
 					clear_window_fsm_input_flags(&(current_window -> flags));
 					turn_off_window_OT_timer(&(current_window -> flags));
-					set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_AUTO);
-					current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+					set_output(current_window, UP_RELEASED_AUTO);
+					current_window -> next_state = IDLE;
 					break;
 				}
             }
@@ -189,93 +167,93 @@ void window_fsm_fire(window_t* current_window)
 			{
                 clear_window_fsm_input_flags(&(current_window -> flags));
                 turn_off_window_OT_timer(&(current_window -> flags));
-                current_window->next_state = WINDOW_FSM_STATE.AUTO_UP;
+                current_window->next_state = AUTO_UP;
                 break;
             }
 			clear_window_fsm_input_flags(&(current_window -> flags));
 			turn_off_window_OT_timer(&(current_window -> flags));
-			set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_STOP);
-			current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
+			set_output(current_window, UP_RELEASED_STOP);
+			current_window -> next_state = BLOCKED;
 			break;
         }
-        case WINDOW_FSM_STATE.AUTO_DOWN:
+        case AUTO_DOWN:
         {			
             if (check_down(current_window)) // Keep polling
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
-                current_window -> next_state = WINDOW_FSM_STATE.AUTO_DOWN;
+                current_window -> next_state = AUTO_DOWN;
                 break;
             }
 
             if (check_no_up_and_no_down(current_window)) // Button fully released
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
-                set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_AUTO);
-                current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+                set_output(current_window, DOWN_RELEASED_AUTO);
+                current_window -> next_state = IDLE;
                 break;
             }
 			clear_window_fsm_input_flags(&(current_window -> flags));
 			turn_off_window_OT_timer(&(current_window -> flags));
-			set_output(current_window, OUTPUT_REQUEST.DOWN_RELEASED_STOP);
-			current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
+			set_output(current_window, DOWN_RELEASED_STOP);
+			current_window -> next_state = BLOCKED;
 			break;
         }
-        case WINDOW_FSM_STATE.AUTO_UP:
+        case AUTO_UP:
         {
 	        if (check_up(current_window)) // Keep polling
 	        {
 		        clear_window_fsm_input_flags(&(current_window->flags));
-		        current_window -> next_state = WINDOW_FSM_STATE.AUTO_UP;
+		        current_window -> next_state = AUTO_UP;
 		        break;
 	        }
 
 	        if (check_no_up_and_no_down(current_window)) // Button fully released
 	        {
 		        clear_window_fsm_input_flags(&(current_window->flags));
-		        set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_AUTO);
-		        current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+		        set_output(current_window, UP_RELEASED_AUTO);
+		        current_window -> next_state = IDLE;
 		        break;
 	        }
 	        clear_window_fsm_input_flags(&(current_window -> flags));
 	        turn_off_window_OT_timer(&(current_window -> flags));
-	        set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_STOP);
-	        current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
+	        set_output(current_window, UP_RELEASED_STOP);
+	        current_window -> next_state = BLOCKED;
 	        break;
         } 
-        case WINDOW_FSM_STATE.BLOCKED: // Wrong button sequence stops controller untill all buttons are released
+        case BLOCKED: // Wrong button sequence stops controller untill all buttons are released
 		{            
             turn_off_window_OT_timer(&(current_window -> flags));
             if (check_any_pressed(current_window))
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
-				current_window -> next_state = WINDOW_FSM_STATE.BLOCKED;
+				current_window -> next_state = BLOCKED;
 			}
 			else
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
-				current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+				current_window -> next_state = IDLE;
 			} 
             break;
         }
-        case WINDOW_FSM_STATE.CENTRAL_CLOSE: //Handles second part of button sequence for commanding auto-lift mode
+        case CENTRAL_CLOSE: //Handles second part of button sequence for commanding auto-lift mode
 		{
 			clear_window_fsm_input_flags(&(current_window -> flags));
-			set_output(current_window, OUTPUT_REQUEST.UP_RELEASED_AUTO);
-			current_window -> next_state = WINDOW_FSM_STATE.AUTHORIZATION_OFF;
+			set_output(current_window, UP_RELEASED_AUTO);
+			current_window -> next_state = AUTHORIZATION_OFF;
 			break;
         }
-		case WINDOW_FSM_STATE.AUTHORIZATION_OFF: // Disables authorization override signal once auto-lift sequence is over (and thus valid)
+		case AUTHORIZATION_OFF: // Disables authorization override signal once auto-lift sequence is over (and thus valid)
 		{
 			if (check_central_close_over(current_window)) // Required as up and down lines and authorization line are managed independently
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
-				set_authorization_request_flags(&(current_window->flags), OFF);
-				current_window -> next_state = WINDOW_FSM_STATE.IDLE;
+				set_authorization_request_flags(current_window, OFF);
+				current_window -> next_state = IDLE;
 			}
 			else
 			{		
 				clear_window_fsm_input_flags(&(current_window -> flags));		
-				current_window -> next_state = WINDOW_FSM_STATE.AUTHORIZATION_OFF;	
+				current_window -> next_state = AUTHORIZATION_OFF;	
 			}			
 			break;
 		}
@@ -288,7 +266,7 @@ void authorization_fsm_fire(window_t* current_window)
 	switch (current_window -> authorizationState)
 	{
 		default:
-		case AUTHORIZATION_FSM_STATE.OFF:
+		case RELEASED:
 		{
 			if (!check_authorization_input(current_window) && //OFF
 				!check_authorization_override_request(current_window))
@@ -296,7 +274,7 @@ void authorization_fsm_fire(window_t* current_window)
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
 				//turn auth override off
 				write_authorization(current_window, OFF);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.OFF;
+				current_window -> authorizationNextState = RELEASED;
 				break;
 			}
 			if (check_authorization_input(current_window)) // Auth on
@@ -304,7 +282,7 @@ void authorization_fsm_fire(window_t* current_window)
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
 				//turn auth override on
 				write_authorization(current_window, ON);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.ARMED;
+				current_window -> authorizationNextState = ARMED;
 				break;
 			}
 			if (!check_authorization_input(current_window) && 
@@ -314,18 +292,18 @@ void authorization_fsm_fire(window_t* current_window)
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.OVERRIDE;
+				current_window -> authorizationNextState = OVERRIDE;
 				break;
 			}			
 		}
-		case AUTHORIZATION_FSM_STATE.ARMED:
+		case ARMED:
 		{
 			if (check_authorization_input(current_window)) // Auth on
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
 				//turn auth override on
 				write_authorization(current_window, ON);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.ARMED;
+				current_window -> authorizationNextState = ARMED;
 				break;
 			}
 			else
@@ -334,11 +312,11 @@ void authorization_fsm_fire(window_t* current_window)
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.OVERRIDE;
+				current_window -> authorizationNextState = OVERRIDE;
 				break;
 			}			
 		}
-		case AUTHORIZATION_FSM_STATE.OVERRIDE:
+		case OVERRIDE:
 		{
 			if (check_authorization_input(current_window)) //BCM auth returns
 			{
@@ -346,7 +324,7 @@ void authorization_fsm_fire(window_t* current_window)
 				//turn auth override on
 				write_authorization(current_window, ON);
 				turn_off_authorization_timer(&(current_window -> flags));
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.ARMED;
+				current_window -> authorizationNextState = ARMED;
 				break;
 			}
 			if (check_authorization_override_request(current_window)) // Central close request, timeout restarts
@@ -355,7 +333,7 @@ void authorization_fsm_fire(window_t* current_window)
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.OVERRIDE;
+				current_window -> authorizationNextState = OVERRIDE;
 				break;
 			}
 			if (!check_authorization_input(current_window) && // Signal can return to offf
@@ -365,17 +343,17 @@ void authorization_fsm_fire(window_t* current_window)
 				//turn auth override off
 				write_authorization(current_window, OFF);
 				turn_off_authorization_timer(&(current_window -> flags));
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.OFF;
+				current_window -> authorizationNextState = RELEASED;
 				break;
 			}
-			if (!check_authorization_time_rollover(current_window)) && // Timeout running
+			if (!check_authorization_time_rollover(current_window) && // Timeout running
 				!check_authorization_input(current_window) &&
 				!check_authorization_release_request(current_window))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
 				//turn auth override on
 				write_authorization(current_window, ON);
-				current_window -> authorizationNextState = AUTHORIZATION_FSM_STATE.OVERRIDE;
+				current_window -> authorizationNextState = OVERRIDE;
 				break;
 			}
 		}
@@ -388,148 +366,148 @@ void output_fsm_fire(window_t* current_window)
 	switch (current_window -> outputState)
 	{
 		default:
-		case OUTPUT_FSM_STATE.IDLE:
+		case ZERO:
 		{
 			cache_output_request(current_window);
-			set_output(current_window, OUTPUT_REQUEST.NONE);
+			set_output(current_window, NONE);
 			clear_central_close_in_progress(&(current_window -> flags));
-			if (check_output_request(current_window) == OUTPUT_REQUEST.NONE) // CACHED
+			if (check_output_request(current_window) == NONE) // CACHED
 			{
-				current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+				current_window -> outputNextState = ZERO;
 				break;
 			}
 			switch (check_output_request(current_window)) //cached
 			{
 				default:
-				case OUTPUT_REQUEST.NONE:
+				case NONE:
 				{
-					current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+					current_window -> outputNextState = ZERO;
 					return;					
 				}
-				case OUTPUT_REQUEST.UP_PRESSED:
+				case UP_PRESSED:
 				{
 					write_up(current_window, ON);
 					break;	
 				}
-				case OUTPUT_REQUEST.DOWN_PRESSED:
+				case DOWN_PRESSED:
 				{
 					write_down(current_window, ON);
 					break;	
 				}
-				case OUTPUT_REQUEST.UP_RELEASED_AUTO:
+				case UP_RELEASED_AUTO:
 				{
 					write_down(current_window, OFF);
-					// Semaphore for not releasing authorization before button releasing sequence is over for up mode
+					// Semaphore for not releasing authorization before button releasing sequence is over in up mode
 					set_central_close_in_progress(&(current_window -> flags));
 					break;	
 				}
-				case OUTPUT_REQUEST.DOWN_RELEASED_AUTO:
+				case DOWN_RELEASED_AUTO:
 				{
 					write_up(current_window, OFF);
 					break;	
 				}
-				case OUTPUT_REQUEST.UP_RELEASED_STOP:
+				case UP_RELEASED_STOP:
 				{
 					write_up(current_window, OFF);
 					break;	
 				}
-				case OUTPUT_REQUEST.DOWN_RELEASED_STOP:
+				case DOWN_RELEASED_STOP:
 				{
 					write_down(current_window, OFF);
 					break;	
 				}
 			}
 			set_output_timer(current_window, BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS);
-			current_window -> outputNextState = OUTPUT_FSM_STATE.FIRST;
+			current_window -> outputNextState = FIRST;
 			break;		
 		}
-		case OUTPUT_FSM_STATE.FIRST
+		case FIRST:
 		{
-			if (check_output_request(current_window) == OUTPUT_REQUEST.NONE) // CACHED
+			if (check_output_request(current_window) == NONE) // CACHED
 			{
 				turn_off_output_timer(&(current_window -> flags));
-				current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+				current_window -> outputNextState = ZERO;
 				break;
 			}
 			if (check_output_time_rollover(current_window))
 			{
 				turn_off_output_timer(&(current_window -> flags));
-				current_window -> outputNextState = OUTPUT_FSM_STATE.SECOND;
+				current_window -> outputNextState = SECOND;
 				break;
 			}
 			else
 			{
-				current_window -> outputNextState = OUTPUT_FSM_STATE.FIRST;
+				current_window -> outputNextState = FIRST;
 				break;
 			}
 		}
-		case OUTPUT_FSM_STATE.SECOND:
+		case SECOND:
 		{
-			if (check_output_request(current_window) == OUTPUT_REQUEST.NONE) // CACHED
+			if (check_output_request(current_window) == NONE) // CACHED
 			{
-				current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+				current_window -> outputNextState = ZERO;
 				break;
 			}
 			switch (check_output_request(current_window)) //cached
 			{
 				default:
-				case OUTPUT_REQUEST.NONE:
+				case NONE:
 				{
-					current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+					current_window -> outputNextState = ZERO;
 					return;
 				}
-				case OUTPUT_REQUEST.UP_PRESSED:
+				case UP_PRESSED:
 				{
 					write_down(current_window, ON);
 					break;
 				}
-				case OUTPUT_REQUEST.DOWN_PRESSED:
+				case DOWN_PRESSED:
 				{
 					write_up(current_window, ON);
 					break;
 				}
-				case OUTPUT_REQUEST.UP_RELEASED_AUTO:
+				case UP_RELEASED_AUTO:
 				{
 					write_up(current_window, OFF);
 					break;
 				}
-				case OUTPUT_REQUEST.DOWN_RELEASED_AUTO:
+				case DOWN_RELEASED_AUTO:
 				{
 					write_down(current_window, OFF);
 					break;
 				}
-				case OUTPUT_REQUEST.UP_RELEASED_STOP:
+				case UP_RELEASED_STOP:
 				{
 					write_down(current_window, OFF);
 					break;
 				}
-				case OUTPUT_REQUEST.DOWN_RELEASED_STOP:
+				case DOWN_RELEASED_STOP:
 				{
 					write_up(current_window, OFF);
 					break;
 				}
 			}
 			set_output_timer(current_window, BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS);
-			current_window -> outputNextState = OUTPUT_FSM_STATE.THIRD;
+			current_window -> outputNextState = THIRD;
 			break;
 		}
-		case OUTPUT_FSM_STATE.THIRD
+		case THIRD:
 		{
-			if (check_output_request(current_window) == OUTPUT_REQUEST.NONE) // CACHED
+			if (check_output_request(current_window) == NONE) // CACHED
 			{
 				turn_off_output_timer(&(current_window -> flags));
-				current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+				current_window -> outputNextState = ZERO;
 				break;
 			}
 			if (check_output_time_rollover(current_window))
 			{
 				turn_off_output_timer(&(current_window -> flags));				
-				current_window -> outputNextState = OUTPUT_FSM_STATE.IDLE;
+				current_window -> outputNextState = ZERO;
 				break;
 			}
 			else
 			{
-				current_window -> outputNextState = OUTPUT_FSM_STATE.THIRD;
+				current_window -> outputNextState = THIRD;
 				break;
 			}
 		}
@@ -537,7 +515,7 @@ void output_fsm_fire(window_t* current_window)
 }
 
 // Window FSM input functions
-inline void clear_window_fsm_input_flags(volatile FLAGS* flags)
+void clear_window_fsm_input_flags(volatile FLAGS* flags)
 {
 	flags -> down_sw = 0;
 	flags -> up_sw = 0;
@@ -617,12 +595,12 @@ unsigned char check_central_close_over(window_t* current_window)
 }
 
 // Window FSM output functions
-inline void set_output(window_t* current_window, OUTPUT_REQUEST o)
+void set_output(window_t* current_window, OUTPUT_REQUEST o)
 {
 	(current_window -> output) = o;
 }
 
-inline void set_window_OT_timer(window_t* current_window, int time)
+void set_window_OT_timer(window_t* current_window, int time)
 {
 	current_window -> ot_timer_max_count = time;
 	current_window -> ot_timer_counter = 0;
@@ -631,13 +609,13 @@ inline void set_window_OT_timer(window_t* current_window, int time)
 	return;
 }
 
-inline void turn_off_window_OT_timer(volatile FLAGS* flags)
+void turn_off_window_OT_timer(volatile FLAGS* flags)
 {
 	flags -> ot_timer_enable = OFF;
 	return;
 }
 
-inline void set_authorization_request_flags(window_t* current_window, unsigned char auth_state)
+void set_authorization_request_flags(window_t* current_window, unsigned char auth_state)
 {
 	if (auth_state)
 	{
@@ -667,58 +645,49 @@ unsigned char check_output_time_rollover(window_t* current_window)
 	return (current_window -> flags).output_timer_rollover;
 }
 
-inline void write_up(window_t* current_window, unsigned char level)
+void write_up(window_t* current_window, unsigned char level)
+{
+	// Automotive line is active low
+	// Output stage pulls it low when control line is high
+	// A level variable high shall pull the automotive line low
+	// Therefore, if (level) GPIO goes high	
+	if (level)
+	{
+		UP_OUT_PORT |= (1 << UP_OUT_BIT_POS);
+	}
+	else
+	{
+		UP_OUT_PORT &= ~(1 << UP_OUT_BIT_POS);
+	}
+}
+
+void write_down(window_t* current_window, unsigned char level)
 {
 	// Automotive line is active low
 	// Output stage pulls it low when control line is high
 	// A level variable high shall pull the automotive line low
 	// Therefore, if (level) GPIO goes high
-	// TODO
-	// Write GPIO
-	// not yet here
-	
 	if (level)
 	{
-		(current_window -> flags).output_up_out = 1;
+		DOWN_OUT_PORT |= (1 << DOWN_OUT_BIT_POS);
 	}
 	else
 	{
-		(current_window -> flags).output_up_out = 0;
+		DOWN_OUT_PORT &= ~(1 << DOWN_OUT_BIT_POS);
 	}
 }
 
-inline void write_down(window_t* current_window, unsigned char level)
-{
-	// Automotive line is active low
-	// Output stage pulls it low when control line is high
-	// A level variable high shall pull the automotive line low
-	// Therefore, if (level) GPIO goes high
-	// TODO
-	// Write GPIO	
-	// not yet here
-	
-	if (level)
-	{
-		(current_window -> flags).output_down_out = 1;
-	}
-	else
-	{
-		(current_window -> flags).output_down_out = 0;
-	}
-}
-}
-
-inline void set_central_close_in_progress(volatile FLAGS* flags)
+void set_central_close_in_progress(volatile FLAGS* flags)
 {
 	flags -> cclose_over = 0;
 }
 
-inline void clear_central_close_in_progress(volatile FLAGS* flags)
+void clear_central_close_in_progress(volatile FLAGS* flags)
 {
 	flags -> cclose_over = 1;
 }
 
-inline void set_output_timer(window_t* current_window, int time)
+void set_output_timer(window_t* current_window, int time)
 {
 	current_window -> output_timer_max_count = time;
 	current_window -> output_timer_counter = 0;
@@ -727,14 +696,14 @@ inline void set_output_timer(window_t* current_window, int time)
 	return;
 }
 
-inline void turn_off_output_timer(volatile FLAGS* flags)
+void turn_off_output_timer(volatile FLAGS* flags)
 {
 	flags -> output_timer_enable = OFF;
 	return;
 }
 
 //AUTH FSM
-inline void clear_authorization_fsm_input_flags(volatile FLAGS* flags)
+void clear_authorization_fsm_input_flags(volatile FLAGS* flags)
 {
 	flags -> authorization_in = 0;
 	flags -> authorization_on = 0;
@@ -762,28 +731,23 @@ unsigned char check_authorization_time_rollover(window_t* current_window)
 	return (current_window -> flags).authorization_timer_rollover;
 }
 
-inline void write_authorization(window_t* current_window, unsigned char level)
+void write_authorization(window_t* current_window, unsigned char level)
 {
 	// Automotive line is active low
 	// Output stage pulls it low when control line is high
 	// A level variable high shall pull the automotive line low
 	// Therefore, if (level) GPIO goes high
-	// TODO
-	// Write GPIO	
-	// not yet here
-	
 	if (level)
 	{
-		(current_window -> flags).authorization_out = 1;
+		AUTH_OUT_PORT |= (1 << AUTH_OUT_BIT_POS);
 	}
 	else
 	{
-		(current_window -> flags).authorization_out = 0;
+		AUTH_OUT_PORT &= ~(1 << AUTH_OUT_BIT_POS);
 	}
 }
-}
 
-inline void set_authorization_timer(window_t* current_window, int time)
+void set_authorization_timer(window_t* current_window, int time)
 {
 	current_window -> authorization_timer_max_count = time;
 	current_window -> authorization_timer_counter = 0;
@@ -792,109 +756,118 @@ inline void set_authorization_timer(window_t* current_window, int time)
 	return;
 }
 
-inline void turn_off_authorization_timer(volatile FLAGS* flags)
+void turn_off_authorization_timer(volatile FLAGS* flags)
 {
 	flags -> authorization_timer_enable = OFF;
 	return;
 }
 
-
-void timer_init(void){
-    TIMER_PR=TIMER_PR_LOAD;
-    TIMER_TMR=0;
-    TIMER_IF=0;
-    TIMER_TCON=TIMER_TCON_LOAD;
-    TIMER_IE=ON;
-    PEIE=ON;
+void port_init(void)
+{
+	// Output pins: off
+	UP_OUT_PORT &= ~(1 << UP_OUT_BIT_POS);
+	UP_OUT_DDR |= (1 << UP_OUT_BIT_POS);
+	DOWN_OUT_PORT &= ~(1 << DOWN_OUT_BIT_POS);
+	DOWN_OUT_DDR |= (1 << DOWN_OUT_BIT_POS);
+	AUTH_OUT_PORT &= ~(1 << AUTH_OUT_BIT_POS);
+	AUTH_OUT_DDR |= (1 << AUTH_OUT_BIT_POS);
+	// Input pins: no pull up/down
+	UP_IN_PORT &= ~(1 << UP_IN_BIT_POS);
+	UP_IN_DDR &= ~(1 << UP_IN_BIT_POS);
+	DOWN_IN_PORT &= ~(1 << DOWN_IN_BIT_POS);
+	DOWN_IN_DDR &= ~(1 << DOWN_IN_BIT_POS);
+	UP_REM_PORT &= ~(1 << UP_REM_BIT_POS);
+	UP_REM_DDR &= ~(1 << UP_REM_BIT_POS);
+	DOWN_REM_PORT &= ~(1 << DOWN_REM_BIT_POS);
+	DOWN_REM_DDR &= ~(1 << DOWN_REM_BIT_POS);
+	AUTH_IN_PORT &= ~(1 << AUTH_IN_BIT_POS);
+	AUTH_IN_DDR &= ~(1 << AUTH_IN_BIT_POS);
+	CCLOSE_IN_PORT &= ~(1 << CCLOSE_IN_BIT_POS);
+	CCLOSE_IN_DDR &= ~(1 << CCLOSE_IN_BIT_POS);
+	
 }
 
-void port_init(void){
-#ifdef TEST_4550
-    ADCON1bits.PCFG=0b1111; //No analog inputs
-#endif
-    
-    WINDOW1_SW_UP1_TRIS = ON;
-    WINDOW1_SW_UP2_TRIS = ON;
-    WINDOW1_SW_DOWN1_TRIS = ON;
-    WINDOW1_SW_DOWN2_TRIS = ON;
-    WINDOW1_ROLLUP_TRIS = OFF;
-    WINDOW1_ROLLDOWN_TRIS = OFF;
-    WINDOW1_CURRENT_SENSE_TRIS = ON;
-    
-    WINDOW2_SW_UP1_TRIS = ON;
-    WINDOW2_SW_UP2_TRIS = ON;
-    WINDOW2_SW_DOWN1_TRIS = ON;
-    WINDOW2_SW_DOWN2_TRIS = ON;
-    WINDOW2_ROLLUP_TRIS = OFF;
-    WINDOW2_ROLLDOWN_TRIS = OFF;
-    WINDOW2_CURRENT_SENSE_TRIS = ON;
-    
-    WINDOW1_ROLLUP=OFF;
-    WINDOW1_ROLLDOWN = OFF;
-    
-    WINDOW2_ROLLUP=OFF;
-    WINDOW2_ROLLDOWN=OFF;
-}
-
-void read_port(void)
+void read_port(window_t* current_window)
 {
 	// TODO
-	// Update and add mismatch
-    windows[0].flags.up_sw=(!WINDOW1_SW_UP1 || !WINDOW1_SW_UP2);
-    windows[0].flags.down_sw=(!WINDOW1_SW_DOWN1 || !WINDOW1_SW_DOWN2);
-    if (windows[0].flags.current_sense_enable){
-        windows[0].flags.current_sense=WINDOW1_CURRENT_SENSE;
-    }
-    
-    windows[1].flags.up_sw = (!WINDOW2_SW_UP1 || !WINDOW2_SW_UP2);
-    windows[1].flags.down_sw = (!WINDOW2_SW_DOWN1 || !WINDOW2_SW_DOWN2);
-    if (windows[1].flags.current_sense_enable) {
-        windows[1].flags.current_sense = WINDOW2_CURRENT_SENSE;
-    }
-    
-}
-
-void set_port(void){
-    WINDOW1_ROLLUP=windows[0].flags.output_up;
-    WINDOW1_ROLLDOWN=windows[0].flags.output_down;
-    
-    WINDOW2_ROLLUP=windows[1].flags.output_up;
-    WINDOW2_ROLLDOWN=windows[1].flags.output_down;    
-}
-
-void set_timer_flags(void){
-    unsigned char i;
-    for (i = 0; i < NUM_WINDOWS; i++) 
+	// Update and add mismatch??
+	
+	// Automotive line is active low
+	// Input stage pushes GPIO high when automotive line is low
+	// Flag variable is set ON when automotive line is asserted and low
+	// Therefore, if GPIO is high flag shall be set ON	
+	if (AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS))
 	{
-        if (windows[i].ot_timer_counter >= windows[i].ot_timer_max_count)
-		{
-            windows[i].flags.ot_timer_rollover = ON;
-        }
+		current_window -> flags.authorization_in = ON;
+	}
+    if (CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS))
+    {
+	    current_window -> flags.cclose_in = ON;
     }
+	if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
+	{
+		current_window -> flags.up_sw = ON;
+	}
+	if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
+	{
+		current_window -> flags.down_sw = ON;
+	}
+	if (UP_REM_PIN & (1 << UP_REM_BIT_POS))
+	{
+		current_window -> flags.up_rem_sw = ON;
+	}
+	if (DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS))
+	{
+		current_window -> flags.down_rem_sw = ON;
+	}
 }
 
-volatile void timer_interrupt(void)
+void timer_init(unsigned char prescaler, unsigned char count)
 {
-    if (TIMER_IF && TIMER_IE) //remove PIC crap
-	{
-        TIMER_IF = 0;
-        unsigned char i;
-        for (i = 0; i < NUM_WINDOWS; ++i)
+	timer_flag = 0;
+	TCCR0A=0b00000010;							//CTC with compare match threshold on OCRA. No HW pin toggling.
+	OCR0A=count;								//Set threshold
+	TCNT0=0;									//Clear count
+	TIFR0|=	0b00000010;							//Clear flag
+	TIMSK0|= 0b00000010;						//Interrupt enable
+	TCCR0B=prescaler & 0b00000111;				//Timer on
+}
+
+void set_timer_flags(window_t* current_window)
+{
+	if (timer_flag)
+	{	
+		if(current_window -> flags.authorization_timer_enable)
 		{
-            if(windows[i].flags.authorization_timer_enable)
+			current_window -> authorization_timer_counter++;
+			if (current_window -> authorization_timer_counter >= current_window -> authorization_timer_max_count)
 			{
-                windows[i].authorization_timer_counter++;
-            }
-            if(windows[i].flags.ot_timer_enable )
+				current_window -> flags.authorization_timer_rollover = 1;
+			}
+		}
+		if(current_window -> flags.ot_timer_enable )
+		{
+			current_window -> ot_timer_counter++;
+			if (current_window -> ot_timer_counter >= current_window -> ot_timer_max_count)
 			{
-                windows[i].ot_timer_counter++;
-            }
-            if (windows[i].flags.output_timer_enable)
+				current_window -> flags.ot_timer_rollover = 1;
+			}
+		}
+		if (current_window -> flags.output_timer_enable)
+		{
+			current_window -> output_timer_counter++;
+			if (current_window -> output_timer_counter >= current_window -> output_timer_max_count)
 			{
-                windows[i].output_timer_counter++;
-            }
-        }
-    }
+				current_window -> flags.output_timer_rollover = 1;
+			}
+		}
+		timer_flag = 0;
+	}
+}
+
+void timer_interrupt(void)
+{
+	timer_flag = 1;
 }
 
 

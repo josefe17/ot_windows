@@ -11,9 +11,10 @@
 #ifndef OT_WINDOWS_H
 #define	OT_WINDOWS_H
 
-#define BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS 15
+#define BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS 20
 #define AUTHORIZATION_EXTENSION_TIME_MS 15000
 #define OT_TIMER_COUNT_MS 250
+#define INPUT_TIME_FILTER_MS 10
 
 #define OFF     0
 #define ON      1
@@ -107,8 +108,16 @@ typedef struct _FLAGS
     unsigned char ot_timer_enable : 1;
 	unsigned char output_timer_rollover: 1;
 	unsigned char output_timer_enable: 1;
+	unsigned char input_timer_rollover: 1;
+	unsigned char input_timer_enable: 1;
 	unsigned char authorization_timer_rollover : 1;
 	unsigned char authorization_timer_enable : 1;
+	unsigned char up_sw_last: 1;
+	unsigned char down_sw_last: 1;
+	unsigned char up_rem_sw_last: 1;
+	unsigned char down_rem_sw_last: 1;
+	unsigned char cclose_in_last: 1;
+	unsigned char authorization_in_last: 1;
 } FLAGS;
 
 
@@ -125,12 +134,13 @@ typedef struct window
 	OUTPUT_FSM_STATE outputNextState;
 	volatile int output_timer_counter;
 	int output_timer_max_count;
+	volatile int input_timer_counter;
+	int input_timer_max_count;
 	AUTHORIZATION_FSM_STATE authorizationState;
 	AUTHORIZATION_FSM_STATE authorizationNextState;
 	volatile int authorization_timer_counter;
 	int authorization_timer_max_count;
     volatile FLAGS flags;
-
 } window_t;
 
 void ot_window_init(window_t*);
@@ -140,8 +150,9 @@ void window_fsm_fire(window_t*);
 void output_fsm_fire(window_t*);
 void authorization_fsm_fire(window_t*);
 
-void port_init(void);
+void port_init(window_t*);
 void read_port(window_t*);
+unsigned char check_input_timer_rollover(window_t*);
 
 void timer_init(unsigned char, unsigned char);
 void set_timer_flags(window_t*);

@@ -52,6 +52,8 @@
 #define DOWN_REM_DDR DDRB
 #define DOWN_REM_BIT_POS 1
 
-//timer0_tick_init(T0_PRESCALER_256, MS_TIMER_COUNT (78), MS_DELAY_CYCLES (1));
+#define DEBUG_PORT PORTB
+#define DEBUG_DDR DDRB
+#define DEBUG_BIT_POS 2
 
 #endif /* PORTS_H_ */

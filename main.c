@@ -10,7 +10,7 @@ int main (void)
 	//TODO
     //Oscillator configurations	  
     ot_window_init(&myWindow);
-    sei();
+    sei();	
     while(1)
 	{
 		ot_window_run(&myWindow);
@@ -20,5 +20,6 @@ int main (void)
 
 ISR(TIMER0_COMPA_vect)
 {
-    timer_interrupt();
+	timer_interrupt();
 }
+

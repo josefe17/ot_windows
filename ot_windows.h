@@ -12,7 +12,7 @@
 #define	OT_WINDOWS_H
 
 #define BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS 20
-#define AUTHORIZATION_EXTENSION_TIME_MS 15000
+#define AUTHORIZATION_EXTENSION_TIME_MS 5000
 #define OT_TIMER_COUNT_MS 250
 #define INPUT_TIME_FILTER_MS 10
 
@@ -145,6 +145,7 @@ unsigned char check_up(window_t*); //pink
 unsigned char check_down(window_t*); // same as pink for down
 unsigned char check_ot_time_rollover(window_t*);
 unsigned char check_central_close(window_t*);
+unsigned char check_no_central_close(window_t*);
 unsigned char check_central_close_over(window_t*);
 
 // Window FSM output functions

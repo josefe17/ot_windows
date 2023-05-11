@@ -32,7 +32,24 @@ typedef enum _OUTPUT_REQUEST
 	DOWN_RELEASED_STOP
 } OUTPUT_REQUEST;
 
-/*FSM STATUS*/
+/* Authorization line FSM status*/
+typedef enum _AUTHORIZATION_FSM_STATE
+{
+	RELEASED,
+	ARMED,
+	OVERRIDE
+} AUTHORIZATION_FSM_STATE;
+
+/* Up and down output buttons lines FSM status*/
+typedef enum _OUTPUT_FSM_STATE
+{
+	ZERO,
+	FIRST, // Delay
+	SECOND, // Second action
+	THIRD // Second delay
+} OUTPUT_FSM_STATE;
+
+/* Main window controller FSM status*/
 typedef enum _WINDOW_FSM_STATE
 {
 	IDLE,
@@ -45,54 +62,7 @@ typedef enum _WINDOW_FSM_STATE
 	AUTHORIZATION_OFF
 } WINDOW_FSM_STATE;
 
-typedef enum _AUTHORIZATION_FSM_STATE
-{
-	RELEASED,
-	ARMED,
-	OVERRIDE
-} AUTHORIZATION_FSM_STATE;
-
-typedef enum _BUTTON_SEQUENCE_STATE
-{		
-	UP_PRESSED_UP_LOW_1,
-	UP_PRESSED_UP_LOW_DELAY_2,
-	UP_PRESSED_DOWN_LOW_3,
-	UP_PRESSED_DOWN_LOW_DELAY_4,
-	
-	DOWN_PRESSED_DOWN_LOW_1,
-	DOWN_PRESSED_DOWN_LOW_DELAY_2,
-	DOWN_PRESSED_UP_LOW_3,
-	DOWN_PRESSED_UP_LOW_DELAY_4,
-	
-	UP_RELEASED_AUTO_DOWN_HIGH_1,
-	UP_RELEASED_AUTO_DOWN_HIGH_DELAY_2,
-	UP_RELEASED_AUTO_UP_HIGH_3,
-	UP_RELEASED_AUTO_UP_HIGH_DELAY_4,
-	
-	DOWN_RELEASED_AUTO_UP_HIGH_1,
-	DOWN_RELEASED_AUTO_UP_HIGH_DELAY_2,
-	DOWN_RELEASED_AUTO_DOWN_HIGH_3,
-	DOWN_RELEASED_AUTO_DOWN_HIGH_DELAY_4,
-	
-	UP_RELEASED_STOP_UP_HIGH_1,
-	UP_RELEASED_STOP_UP_HIGH_DELAY_2,
-	UP_RELEASED_STOP_DOWN_HIGH_3,
-	UP_RELEASED_STOP_DOWN_HIGH_DELAY_4,
-
-	DOWN_RELEASED_STOP_DOWN_HIGH_1,
-	DOWN_RELEASED_STOP_DOWN_HIGH_DELAY_2,
-	DOWN_RELEASED_STOP_UP_HIGH_3,
-	DOWN_RELEASED_STOP_UP_HIGH_DELAY_4
-} BUTTON_SEQUENCE_STATE;
-
-typedef enum _OUTPUT_FSM_STATE
-{
-	ZERO,
-	FIRST, // Delay
-	SECOND, // Second action
-	THIRD // Second delay
-} OUTPUT_FSM_STATE;
-
+/* Window object bitfield variables*/
 typedef struct _FLAGS 
 {
     unsigned char up_sw : 1; 
@@ -120,7 +90,7 @@ typedef struct _FLAGS
 	unsigned char authorization_in_last: 1;
 } FLAGS;
 
-
+/* Window object*/
 typedef struct window 
 {
     unsigned char id;
@@ -143,20 +113,25 @@ typedef struct window
     volatile FLAGS flags;
 } window_t;
 
+/* Main functions*/
 void ot_window_init(window_t*);
 void ot_window_run(window_t*);
 
+/* Hardware initialization functions*/
+void port_init(window_t*);
+// TODO
+// Make hardware independent
+void timer_init(unsigned char, unsigned char);
+
+/* Tick timer management functions*/
+void set_timer_flags(window_t*);
+void timer_interrupt(void); // This shall be called from ISR
+
+/* FSM run functions*/
+void read_port(window_t*); // Input ports kinda FSM
 void window_fsm_fire(window_t*);
 void output_fsm_fire(window_t*);
 void authorization_fsm_fire(window_t*);
-
-void port_init(window_t*);
-void read_port(window_t*);
-unsigned char check_input_timer_rollover(window_t*);
-
-void timer_init(unsigned char, unsigned char);
-void set_timer_flags(window_t*);
-void timer_interrupt(void);
 
 // Window FSM input functions
 void clear_window_fsm_input_flags(volatile FLAGS*);
@@ -203,6 +178,12 @@ unsigned char check_authorization_time_rollover(window_t*);
 void write_authorization(window_t*, unsigned char);
 void set_authorization_timer(window_t*, int);
 void turn_off_authorization_timer(volatile FLAGS*);
+
+// Debug functions
+void initDebugLine();
+void setDebugLine();
+void clearDebugLine();
+void toggleDebugLine();
 
 #endif	/* OT_WINDOWS_H */
 

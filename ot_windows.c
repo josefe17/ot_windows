@@ -9,10 +9,22 @@ volatile unsigned char timer_flag;
 
 void ot_window_init(window_t* current_window)
 {
+	initDebugLine();
 	// GPIO init
 	port_init(current_window);	
 	// Timer init
 	timer_init(TIMER0_PRESCALER_FOR_1MS_TICK_WITH_16MHZ, TIMER0_COUNT_FOR_1MS_TICK_WITH_16MHZ);
+	// Input init
+	current_window -> input_timer_counter = 0;		
+	current_window -> flags.up_sw_last = OFF;
+	current_window -> flags.down_sw_last = OFF;
+	current_window -> flags.up_rem_sw_last = OFF;
+	current_window -> flags.down_rem_sw_last = OFF;
+	current_window -> flags.cclose_in_last = OFF;
+	current_window -> flags.authorization_in_last = OFF;	
+	current_window -> input_timer_max_count = INPUT_TIME_FILTER_MS;	
+	current_window -> flags.input_timer_rollover = OFF;
+	current_window -> flags.input_timer_enable = ON; // Start timer now
 	// Window FSM
 	current_window -> current_state = IDLE;
 	current_window -> next_state = IDLE;
@@ -45,11 +57,292 @@ void ot_window_init(window_t* current_window)
 
 void ot_window_run(window_t* current_window)
 {		
-	read_port(current_window);
 	set_timer_flags(current_window);
+	read_port(current_window);	
 	window_fsm_fire(current_window);
 	authorization_fsm_fire(current_window);
 	output_fsm_fire(current_window);
+}
+
+void port_init(window_t* current_window)
+{
+	// Output pins: off
+	UP_OUT_PORT &= ~(1 << UP_OUT_BIT_POS);
+	UP_OUT_DDR |= (1 << UP_OUT_BIT_POS);
+	DOWN_OUT_PORT &= ~(1 << DOWN_OUT_BIT_POS);
+	DOWN_OUT_DDR |= (1 << DOWN_OUT_BIT_POS);
+	AUTH_OUT_PORT &= ~(1 << AUTH_OUT_BIT_POS);
+	AUTH_OUT_DDR |= (1 << AUTH_OUT_BIT_POS);
+	// Input pins: no pull up/down
+	UP_IN_PORT &= ~(1 << UP_IN_BIT_POS);
+	UP_IN_DDR &= ~(1 << UP_IN_BIT_POS);
+	DOWN_IN_PORT &= ~(1 << DOWN_IN_BIT_POS);
+	DOWN_IN_DDR &= ~(1 << DOWN_IN_BIT_POS);
+	UP_REM_PORT &= ~(1 << UP_REM_BIT_POS);
+	UP_REM_DDR &= ~(1 << UP_REM_BIT_POS);
+	DOWN_REM_PORT &= ~(1 << DOWN_REM_BIT_POS);
+	DOWN_REM_DDR &= ~(1 << DOWN_REM_BIT_POS);
+	AUTH_IN_PORT &= ~(1 << AUTH_IN_BIT_POS);
+	AUTH_IN_DDR &= ~(1 << AUTH_IN_BIT_POS);
+	CCLOSE_IN_PORT &= ~(1 << CCLOSE_IN_BIT_POS);
+	CCLOSE_IN_DDR &= ~(1 << CCLOSE_IN_BIT_POS);	
+}
+
+void timer_init(unsigned char prescaler, unsigned char count)
+{
+	timer_flag = 0;
+	TCCR0A=0b00000010;							//CTC with compare match threshold on OCRA. No HW pin toggling.
+	OCR0A=count;								//Set threshold
+	TCNT0=0;									//Clear count
+	TIFR0|=	0b00000010;							//Clear flag
+	TIMSK0|= 0b00000010;						//Interrupt enable
+	TCCR0B=prescaler & 0b00000111;				//Timer on
+}
+
+void set_timer_flags(window_t* current_window)
+{
+	if (timer_flag)
+	{
+		if(current_window -> flags.authorization_timer_enable)
+		{
+			current_window -> authorization_timer_counter++;
+			if (current_window -> authorization_timer_counter >= current_window -> authorization_timer_max_count)
+			{
+				current_window -> flags.authorization_timer_rollover = 1;
+			}
+		}
+		if(current_window -> flags.ot_timer_enable )
+		{
+			current_window -> ot_timer_counter++;
+			if (current_window -> ot_timer_counter >= current_window -> ot_timer_max_count)
+			{
+				current_window -> flags.ot_timer_rollover = 1;
+			}
+		}
+		if (current_window -> flags.output_timer_enable)
+		{
+			current_window -> output_timer_counter++;
+			if (current_window -> output_timer_counter >= current_window -> output_timer_max_count)
+			{
+				current_window -> flags.output_timer_rollover = 1;
+			}
+		}
+		if (current_window -> flags.input_timer_enable)
+		{
+			current_window -> input_timer_counter++;
+			if (current_window -> input_timer_counter >= current_window -> input_timer_max_count)
+			{
+				current_window -> flags.input_timer_rollover = 1;
+			}
+		}
+		timer_flag = 0;
+	}
+}
+
+void timer_interrupt(void)
+{
+	timer_flag = 1;
+}
+
+void read_port(window_t* current_window)
+{
+	// TODO
+	// Update and add mismatch??
+	
+	// Automotive line is active low
+	// Input stage pushes GPIO high when automotive line is low
+	// Flag variable is set ON when automotive line is asserted and low
+	// Therefore, if GPIO is high flag shall be set ON
+	if (current_window -> flags.input_timer_rollover)
+	{
+		// If last value matches current
+		if (((AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS)) && (current_window -> flags.authorization_in_last)) ||
+		(!(AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS)) && !(current_window -> flags.authorization_in_last)))
+		{
+			// output is updated to current/last
+			if (AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS))
+			{
+				current_window -> flags.authorization_in = ON;
+			}
+			else
+			{
+				current_window -> flags.authorization_in = OFF;
+			}
+		}
+		// Update last value
+		if (AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS))
+		{
+			current_window -> flags.authorization_in_last = ON;
+		}
+		else
+		{
+			current_window -> flags.authorization_in_last = OFF;
+		}
+		// If last value matches current
+		if (((CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS)) && (current_window -> flags.cclose_in_last)) ||
+		(!(CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS)) && !(current_window -> flags.cclose_in_last)))
+		{
+			// output is updated to current/last
+			if (CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS))
+			{
+				current_window -> flags.cclose_in = ON;
+			}
+			else
+			{
+				current_window -> flags.cclose_in = OFF;
+			}
+		}
+		// Update last value
+		if (CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS))
+		{
+			current_window -> flags.cclose_in_last = ON;
+		}
+		else
+		{
+			current_window -> flags.cclose_in_last = OFF;
+		}
+		// If last value matches current
+		if (((UP_IN_PIN & (1 << UP_IN_BIT_POS)) && (current_window -> flags.up_sw_last)) ||
+		(!(UP_IN_PIN & (1 << UP_IN_BIT_POS)) && !(current_window -> flags.up_sw_last)))
+		{
+			// output is updated to current/last
+			if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
+			{
+				current_window -> flags.up_sw = ON;
+			}
+			else
+			{
+				current_window -> flags.up_sw = OFF;
+			}
+		}
+		// Update last value
+		if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
+		{
+			current_window -> flags.up_sw_last = ON;
+		}
+		else
+		{
+			current_window -> flags.up_sw_last = OFF;
+		}
+		// If last value matches current
+		if (((DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && (current_window -> flags.down_sw_last)) ||
+		(!(DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && !(current_window -> flags.down_sw_last)))
+		{
+			// output is updated to current/last
+			if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
+			{
+				current_window -> flags.down_sw = ON;
+			}
+			else
+			{
+				current_window -> flags.down_sw = OFF;
+			}
+		}
+		// Update last value
+		if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
+		{
+			current_window -> flags.down_sw_last = ON;
+		}
+		else
+		{
+			current_window -> flags.down_sw_last = OFF;
+		}
+		// If last value matches current
+		if (((UP_IN_PIN & (1 << UP_IN_BIT_POS)) && (current_window -> flags.up_sw_last)) ||
+		(!(UP_IN_PIN & (1 << UP_IN_BIT_POS)) && !(current_window -> flags.up_sw_last)))
+		{
+			// output is updated to current/last
+			if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
+			{
+				current_window -> flags.up_sw = ON;
+			}
+			else
+			{
+				current_window -> flags.up_sw = OFF;
+			}
+		}
+		// Update last value
+		if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
+		{
+			current_window -> flags.up_sw_last = ON;
+		}
+		else
+		{
+			current_window -> flags.up_sw_last = OFF;
+		}
+
+		// If last value matches current
+		if (((DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && (current_window -> flags.down_sw_last)) ||
+		(!(DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && !(current_window -> flags.down_sw_last)))
+		{
+			// output is updated to current/last
+			if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
+			{
+				current_window -> flags.down_sw = ON;
+			}
+			else
+			{
+				current_window -> flags.down_sw = OFF;
+			}
+		}
+		// Update last value
+		if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
+		{
+			current_window -> flags.down_sw_last = ON;
+		}
+		else
+		{
+			current_window -> flags.down_sw_last = OFF;
+		}
+		// If last value matches current
+		if (((UP_REM_PIN & (1 << UP_REM_BIT_POS)) && (current_window -> flags.up_rem_sw_last)) ||
+		(!(UP_REM_PIN & (1 << UP_REM_BIT_POS)) && !(current_window -> flags.up_rem_sw_last)))
+		{
+			// output is updated to current/last
+			if (UP_REM_PIN & (1 << UP_REM_BIT_POS))
+			{
+				current_window -> flags.up_rem_sw = ON;
+			}
+			else
+			{
+				current_window -> flags.up_rem_sw = OFF;
+			}
+		}
+		// Update last value
+		if (UP_REM_PIN & (1 << UP_REM_BIT_POS))
+		{
+			current_window -> flags.up_rem_sw_last = ON;
+		}
+		else
+		{
+			current_window -> flags.up_rem_sw_last = OFF;
+		}
+
+		// If last value matches current
+		if (((DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS)) && (current_window -> flags.down_rem_sw_last)) ||
+		(!(DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS)) && !(current_window -> flags.down_rem_sw_last)))
+		{
+			// output is updated to current/last
+			if (DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS))
+			{
+				current_window -> flags.down_rem_sw = ON;
+			}
+			else
+			{
+				current_window -> flags.down_rem_sw = OFF;
+			}
+		}
+		// Update last value
+		if (DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS))
+		{
+			current_window -> flags.down_rem_sw_last = ON;
+		}
+		else
+		{
+			current_window -> flags.down_rem_sw_last = OFF;
+		}
+		current_window -> flags.input_timer_rollover = 0;
+	}
 }
 
 void window_fsm_fire(window_t* current_window)
@@ -505,7 +798,7 @@ void output_fsm_fire(window_t* current_window)
 			{
 				turn_off_output_timer(&(current_window -> flags));				
 				current_window -> outputNextState = ZERO;
-				DEBUG_PORT ^= (1 << DEBUG_BIT_POS);
+				toggleDebugLine();	
 				break;
 			}
 			else
@@ -632,7 +925,7 @@ void set_authorization_request_flags(window_t* current_window, unsigned char aut
 	}
 }
 
-// Output FSM
+// Output FSM input functions
 OUTPUT_REQUEST check_output_request(window_t* current_window)
 {
 	return current_window -> output_cache;
@@ -648,6 +941,7 @@ unsigned char check_output_time_rollover(window_t* current_window)
 	return (current_window -> flags).output_timer_rollover;
 }
 
+// Output FSM output functions
 void write_up(window_t* current_window, unsigned char level)
 {
 	// Automotive line is active low
@@ -705,7 +999,7 @@ void turn_off_output_timer(volatile FLAGS* flags)
 	return;
 }
 
-//AUTH FSM
+// Authorization FSM input functions
 void clear_authorization_fsm_input_flags(volatile FLAGS* flags)
 {
 	//flags -> authorization_in = 0;
@@ -734,6 +1028,7 @@ unsigned char check_authorization_time_rollover(window_t* current_window)
 	return (current_window -> flags).authorization_timer_rollover;
 }
 
+// Authorization FSM output functions
 void write_authorization(window_t* current_window, unsigned char level)
 {
 	// Automotive line is active low
@@ -765,295 +1060,34 @@ void turn_off_authorization_timer(volatile FLAGS* flags)
 	return;
 }
 
-void port_init(window_t* current_window)
+void initDebugLine()
 {
-	// Output pins: off
-	UP_OUT_PORT &= ~(1 << UP_OUT_BIT_POS);
-	UP_OUT_DDR |= (1 << UP_OUT_BIT_POS);
-	DOWN_OUT_PORT &= ~(1 << DOWN_OUT_BIT_POS);
-	DOWN_OUT_DDR |= (1 << DOWN_OUT_BIT_POS);
-	AUTH_OUT_PORT &= ~(1 << AUTH_OUT_BIT_POS);
-	AUTH_OUT_DDR |= (1 << AUTH_OUT_BIT_POS);
-	// Input pins: no pull up/down
-	UP_IN_PORT &= ~(1 << UP_IN_BIT_POS);
-	UP_IN_DDR &= ~(1 << UP_IN_BIT_POS);
-	DOWN_IN_PORT &= ~(1 << DOWN_IN_BIT_POS);
-	DOWN_IN_DDR &= ~(1 << DOWN_IN_BIT_POS);
-	UP_REM_PORT &= ~(1 << UP_REM_BIT_POS);
-	UP_REM_DDR &= ~(1 << UP_REM_BIT_POS);
-	DOWN_REM_PORT &= ~(1 << DOWN_REM_BIT_POS);
-	DOWN_REM_DDR &= ~(1 << DOWN_REM_BIT_POS);
-	AUTH_IN_PORT &= ~(1 << AUTH_IN_BIT_POS);
-	AUTH_IN_DDR &= ~(1 << AUTH_IN_BIT_POS);
-	CCLOSE_IN_PORT &= ~(1 << CCLOSE_IN_BIT_POS);
-	CCLOSE_IN_DDR &= ~(1 << CCLOSE_IN_BIT_POS);
-
+#ifdef DEBUG_MODE
 	DEBUG_PORT &= ~(1 << DEBUG_BIT_POS);
 	DEBUG_DDR |= (1 << DEBUG_BIT_POS);
-	
-	// Set input timer filter
-	current_window -> flags.up_sw_last = 0;
-	current_window -> flags.down_sw_last = 0;
-	current_window -> flags.up_rem_sw_last = 0;
-	current_window -> flags.down_rem_sw_last = 0;
-	current_window -> flags.cclose_in_last = 0;
-	current_window -> flags.authorization_in_last = 0;	
-	
-	current_window -> input_timer_max_count = INPUT_TIME_FILTER_MS;
-	current_window -> input_timer_counter = 0;
-	current_window -> flags.input_timer_rollover = 0;
-	current_window -> flags.input_timer_enable = 1;
+#endif
 }
 
-void read_port(window_t* current_window)
+void setDebugLine()
 {
-	// TODO
-	// Update and add mismatch??
-	
-	// Automotive line is active low
-	// Input stage pushes GPIO high when automotive line is low
-	// Flag variable is set ON when automotive line is asserted and low
-	// Therefore, if GPIO is high flag shall be set ON	
-	if (current_window -> flags.input_timer_rollover)
-	{
-		// If last value matches current
-		if (((AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS)) && (current_window -> flags.authorization_in_last)) ||
-		    (!(AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS)) && !(current_window -> flags.authorization_in_last)))
-		{
-			// output is updated to current/last
-			if (AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS))
-			{
-				current_window -> flags.authorization_in = ON;
-			}
-			else
-			{
-				current_window -> flags.authorization_in = OFF;
-			}			
-		}
-		// Update last value
-		if (AUTH_IN_PIN & (1 << AUTH_IN_BIT_POS))
-		{
-			current_window -> flags.authorization_in_last = ON;
-		}
-		else
-		{
-			current_window -> flags.authorization_in_last = OFF;
-		}		
-		// If last value matches current
-		if (((CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS)) && (current_window -> flags.cclose_in_last)) ||
-		(!(CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS)) && !(current_window -> flags.cclose_in_last)))
-		{
-			// output is updated to current/last
-			if (CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS))
-			{
-				current_window -> flags.cclose_in = ON;
-			}
-			else
-			{
-				current_window -> flags.cclose_in = OFF;
-			}
-		}
-		// Update last value
-		if (CCLOSE_IN_PIN & (1 << CCLOSE_IN_BIT_POS))
-		{
-			current_window -> flags.cclose_in_last = ON;
-		}
-		else
-		{
-			current_window -> flags.cclose_in_last = OFF;
-		}		
-		// If last value matches current
-		if (((UP_IN_PIN & (1 << UP_IN_BIT_POS)) && (current_window -> flags.up_sw_last)) ||
-		(!(UP_IN_PIN & (1 << UP_IN_BIT_POS)) && !(current_window -> flags.up_sw_last)))
-		{
-			// output is updated to current/last
-			if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
-			{
-				current_window -> flags.up_sw = ON;
-			}
-			else
-			{
-				current_window -> flags.up_sw = OFF;
-			}
-		}
-		// Update last value
-		if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
-		{
-			current_window -> flags.up_sw_last = ON;
-		}
-		else
-		{
-			current_window -> flags.up_sw_last = OFF;
-		}
-		// If last value matches current
-		if (((DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && (current_window -> flags.down_sw_last)) ||
-		(!(DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && !(current_window -> flags.down_sw_last)))
-		{
-			// output is updated to current/last
-			if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
-			{
-				current_window -> flags.down_sw = ON;
-			}
-			else
-			{
-				current_window -> flags.down_sw = OFF;
-			}
-		}
-		// Update last value
-		if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
-		{
-			current_window -> flags.down_sw_last = ON;
-		}
-		else
-		{
-			current_window -> flags.down_sw_last = OFF;
-		}		
-		// If last value matches current
-		if (((UP_IN_PIN & (1 << UP_IN_BIT_POS)) && (current_window -> flags.up_sw_last)) ||
-		(!(UP_IN_PIN & (1 << UP_IN_BIT_POS)) && !(current_window -> flags.up_sw_last)))
-		{
-			// output is updated to current/last
-			if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
-			{
-				current_window -> flags.up_sw = ON;
-			}
-			else
-			{
-				current_window -> flags.up_sw = OFF;
-			}
-		}
-		// Update last value
-		if (UP_IN_PIN & (1 << UP_IN_BIT_POS))
-		{
-			current_window -> flags.up_sw_last = ON;
-		}
-		else
-		{
-			current_window -> flags.up_sw_last = OFF;
-		}						 
-
-		// If last value matches current
-		if (((DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && (current_window -> flags.down_sw_last)) ||
-		(!(DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS)) && !(current_window -> flags.down_sw_last)))
-		{
-			// output is updated to current/last
-			if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
-			{
-				current_window -> flags.down_sw = ON;
-			}
-			else
-			{
-				current_window -> flags.down_sw = OFF;
-			}
-		}
-		// Update last value
-		if (DOWN_IN_PIN & (1 << DOWN_IN_BIT_POS))
-		{
-			current_window -> flags.down_sw_last = ON;
-		}
-		else
-		{
-			current_window -> flags.down_sw_last = OFF;
-		}	
-		// If last value matches current
-		if (((UP_REM_PIN & (1 << UP_REM_BIT_POS)) && (current_window -> flags.up_rem_sw_last)) ||
-		(!(UP_REM_PIN & (1 << UP_REM_BIT_POS)) && !(current_window -> flags.up_rem_sw_last)))
-		{
-			// output is updated to current/last
-			if (UP_REM_PIN & (1 << UP_REM_BIT_POS))
-			{
-				current_window -> flags.up_rem_sw = ON;
-			}
-			else
-			{
-				current_window -> flags.up_rem_sw = OFF;
-			}
-		}
-		// Update last value
-		if (UP_REM_PIN & (1 << UP_REM_BIT_POS))
-		{
-			current_window -> flags.up_rem_sw_last = ON;
-		}
-		else
-		{
-			current_window -> flags.up_rem_sw_last = OFF;
-		}
-
-		// If last value matches current
-		if (((DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS)) && (current_window -> flags.down_rem_sw_last)) ||
-		(!(DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS)) && !(current_window -> flags.down_rem_sw_last)))
-		{
-			// output is updated to current/last
-			if (DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS))
-			{
-				current_window -> flags.down_rem_sw = ON;
-			}
-			else
-			{
-				current_window -> flags.down_rem_sw = OFF;
-			}
-		}
-		// Update last value
-		if (DOWN_REM_PIN & (1 << DOWN_REM_BIT_POS))
-		{
-			current_window -> flags.down_rem_sw_last = ON;
-		}
-		else
-		{
-			current_window -> flags.down_rem_sw_last = OFF;
-		}		
-	}
+#ifdef DEBUG_MODE
+	DEBUG_PORT |= (1 << DEBUG_BIT_POS);
+#endif
 }
 
-void timer_init(unsigned char prescaler, unsigned char count)
+void clearDebugLine()
 {
-	timer_flag = 0;
-	TCCR0A=0b00000010;							//CTC with compare match threshold on OCRA. No HW pin toggling.
-	OCR0A=count;								//Set threshold
-	TCNT0=0;									//Clear count
-	TIFR0|=	0b00000010;							//Clear flag
-	TIMSK0|= 0b00000010;						//Interrupt enable
-	TCCR0B=prescaler & 0b00000111;				//Timer on
+#ifdef DEBUG_MODE
+	DEBUG_PORT &= ~(1 << DEBUG_BIT_POS);	
+#endif
 }
 
-void set_timer_flags(window_t* current_window)
+void toggleDebugLine()
 {
-	if (timer_flag)
-	{	
-		if(current_window -> flags.authorization_timer_enable)
-		{
-			current_window -> authorization_timer_counter++;
-			if (current_window -> authorization_timer_counter >= current_window -> authorization_timer_max_count)
-			{
-				current_window -> flags.authorization_timer_rollover = 1;
-			}
-		}
-		if(current_window -> flags.ot_timer_enable )
-		{
-			current_window -> ot_timer_counter++;
-			if (current_window -> ot_timer_counter >= current_window -> ot_timer_max_count)
-			{
-				current_window -> flags.ot_timer_rollover = 1;
-			}
-		}
-		if (current_window -> flags.output_timer_enable)
-		{
-			current_window -> output_timer_counter++;
-			if (current_window -> output_timer_counter >= current_window -> output_timer_max_count)
-			{
-				current_window -> flags.output_timer_rollover = 1;
-			}
-		}
-		timer_flag = 0;
-	}
+#ifdef DEBUG_MODE
+	DEBUG_PORT ^= (1 << DEBUG_BIT_POS);
+#endif
 }
-
-void timer_interrupt(void)
-{
-	timer_flag = 1;
-}
-
-
 
 
 

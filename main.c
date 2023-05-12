@@ -7,8 +7,9 @@ window_t myWindow;
 
 int main (void)
 {
-	//TODO
-    //Oscillator configurations	  
+	// Lfuse = 0xD7
+	// Hfuse = 0xDF
+	// Efuse = 0xFC
     ot_window_init(&myWindow);
     sei();	
     while(1)

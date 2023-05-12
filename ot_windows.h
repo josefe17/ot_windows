@@ -143,6 +143,7 @@ unsigned char check_any_pressed(window_t*); //red
 unsigned char check_no_up_and_no_down(window_t*); // gray
 unsigned char check_up(window_t*); //pink
 unsigned char check_down(window_t*); // same as pink for down
+unsigned char check_mismatch(window_t*);
 unsigned char check_ot_time_rollover(window_t*);
 unsigned char check_central_close(window_t*);
 unsigned char check_no_central_close(window_t*);

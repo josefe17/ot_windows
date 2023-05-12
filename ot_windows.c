@@ -395,7 +395,15 @@ void window_fsm_fire(window_t* current_window)
 			break;			
         }		
 		case MAN_DOWN:
-		{						
+		{
+			if (check_mismatch(current_window))
+			{
+				clear_window_fsm_input_flags(&(current_window -> flags));
+				turn_off_window_OT_timer(&(current_window -> flags));
+				set_output(current_window, DOWN_RELEASED_STOP);
+				current_window -> next_state = BLOCKED;
+				break;
+			}						
 			if (check_down_and_no_up(current_window))
 			{
 				clear_window_fsm_input_flags(&(current_window->flags));
@@ -435,7 +443,15 @@ void window_fsm_fire(window_t* current_window)
 			break;
 		}		
         case MAN_UP:
-        {							
+        {	
+			if (check_mismatch(current_window))
+			{
+				clear_window_fsm_input_flags(&(current_window -> flags));
+				turn_off_window_OT_timer(&(current_window -> flags));
+				set_output(current_window, UP_RELEASED_STOP);
+				current_window -> next_state = BLOCKED;
+				break;
+			}						
             if (check_up_and_no_down(current_window))
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
@@ -475,7 +491,15 @@ void window_fsm_fire(window_t* current_window)
 			break;
         }
         case AUTO_DOWN:
-        {									
+        {	
+			if (check_mismatch(current_window))								
+			{
+				clear_window_fsm_input_flags(&(current_window -> flags));
+				turn_off_window_OT_timer(&(current_window -> flags));
+				set_output(current_window, DOWN_RELEASED_STOP);
+				current_window -> next_state = BLOCKED;
+				break;
+			}
             if (check_down(current_window)) // Keep polling
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
@@ -497,7 +521,15 @@ void window_fsm_fire(window_t* current_window)
 			break;
         }
         case AUTO_UP:
-        {					
+        {		
+			if (check_mismatch(current_window))
+			{
+				clear_window_fsm_input_flags(&(current_window -> flags));
+				turn_off_window_OT_timer(&(current_window -> flags));
+				set_output(current_window, UP_RELEASED_STOP);
+				current_window -> next_state = BLOCKED;
+				break;
+			}			
 	        if (check_up(current_window)) // Keep polling
 	        {
 		        clear_window_fsm_input_flags(&(current_window->flags));
@@ -876,6 +908,12 @@ unsigned char check_down(window_t* current_window) // same as pink for down
 {
 	return ((current_window->flags).down_sw ||
 			(current_window->flags).down_rem_sw);
+}
+
+unsigned char check_mismatch(window_t* current_window)
+{
+	return (((current_window->flags).up_sw && (current_window->flags).down_rem_sw) ||
+			((current_window->flags).up_rem_sw && (current_window->flags).down_sw)); 
 }
 
 unsigned char check_ot_time_rollover(window_t* current_window)

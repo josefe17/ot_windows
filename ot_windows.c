@@ -492,7 +492,7 @@ void window_fsm_fire(window_t* current_window)
         }
         case AUTO_DOWN:
         {	
-			if (check_mismatch(current_window))								
+			if (check_mismatch_auto_down(current_window))								
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
 				turn_off_window_OT_timer(&(current_window -> flags));
@@ -522,7 +522,7 @@ void window_fsm_fire(window_t* current_window)
         }
         case AUTO_UP:
         {		
-			if (check_mismatch(current_window))
+			if (check_mismatch_auto_up(current_window))
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
 				turn_off_window_OT_timer(&(current_window -> flags));
@@ -914,6 +914,18 @@ unsigned char check_mismatch(window_t* current_window)
 {
 	return (((current_window->flags).up_sw && (current_window->flags).down_rem_sw) ||
 			((current_window->flags).up_rem_sw && (current_window->flags).down_sw)); 
+}
+
+unsigned char check_mismatch_auto_up(window_t* current_window)
+{
+	return (((current_window->flags).up_sw && (current_window->flags).down_sw && (current_window->flags).down_rem_sw &&  !(current_window->flags).up_rem_sw) ||
+			((current_window->flags).up_rem_sw && (current_window->flags).down_rem_sw && (current_window->flags).down_sw &&  !(current_window->flags).up_sw));
+}
+
+unsigned char check_mismatch_auto_down(window_t* current_window)
+{
+	return (((current_window->flags).up_sw && (current_window->flags).down_sw && !(current_window->flags).down_rem_sw &&  (current_window->flags).up_rem_sw) ||
+	((current_window->flags).up_rem_sw && (current_window->flags).down_rem_sw && !(current_window->flags).down_sw &&  (current_window->flags).up_sw));
 }
 
 unsigned char check_ot_time_rollover(window_t* current_window)

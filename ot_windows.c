@@ -818,7 +818,7 @@ void output_fsm_fire(window_t* current_window)
 					break;
 				}
 			}
-			set_output_timer(current_window, BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS);
+			set_output_timer(current_window, BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS*2);
 			current_window -> outputNextState = THIRD;
 			break;
 		}

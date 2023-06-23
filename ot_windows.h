@@ -14,6 +14,7 @@
 #define BUTTON_SEQUENCE_DELAY_BETWEEN_STEPS_MS 25
 #define AUTHORIZATION_EXTENSION_TIME_MS 5000
 #define OT_TIMER_COUNT_MS 150
+#define CENTRAL_OPEN_TIMER_COUNT_MS 10000
 #define INPUT_TIME_FILTER_MS 10
 
 #define OFF     0
@@ -59,6 +60,7 @@ typedef enum _WINDOW_FSM_STATE
 	MAN_DOWN,
 	MAN_UP,
 	CENTRAL_CLOSE,
+	CENTRAL_OPEN,
 	AUTHORIZATION_OFF
 } WINDOW_FSM_STATE;
 
@@ -70,12 +72,14 @@ typedef struct _FLAGS
 	unsigned char up_rem_sw : 1;
 	unsigned char down_rem_sw : 1;
 	unsigned char cclose_in : 1;
-	unsigned char cclose_over : 1;	
+	unsigned char c_open_close_over : 1;	
 	unsigned char authorization_in: 1;
 	unsigned char authorization_on: 1;
 	unsigned char authorization_off: 1;
     unsigned char ot_timer_rollover : 1;
     unsigned char ot_timer_enable : 1;
+	unsigned char central_open_timer_rollover : 1;
+	unsigned char central_open_timer_enable : 1;
 	unsigned char output_timer_rollover: 1;
 	unsigned char output_timer_enable: 1;
 	unsigned char input_timer_rollover: 1;
@@ -97,7 +101,9 @@ typedef struct window
     WINDOW_FSM_STATE current_state;
     WINDOW_FSM_STATE next_state;
     volatile int ot_timer_counter;
-    int ot_timer_max_count;  
+    int ot_timer_max_count;
+	volatile int central_open_timer_counter;
+	int central_open_timer_max_count;  
 	OUTPUT_REQUEST output;
 	OUTPUT_REQUEST output_cache;
 	OUTPUT_FSM_STATE outputState;
@@ -129,6 +135,7 @@ void timer_interrupt(void); // This shall be called from ISR
 
 /* FSM run functions*/
 void read_port(window_t*); // Input ports kinda FSM
+void central_open_fsm_fire(window_t*); // Central open timer asynchronous tasks
 void window_fsm_fire(window_t*);
 void output_fsm_fire(window_t*);
 void authorization_fsm_fire(window_t*);
@@ -149,12 +156,18 @@ unsigned char check_mismatch_auto_down(window_t*);
 unsigned char check_ot_time_rollover(window_t*);
 unsigned char check_central_close(window_t*);
 unsigned char check_no_central_close(window_t*);
-unsigned char check_central_close_over(window_t*);
+unsigned char check_central_open_close_over(window_t*);
+unsigned char check_central_open_valid(window_t*);
+
+// Central open FSM input functions
+unsigned char check_central_open_time_rollover(window_t*);
 
 // Window FSM output functions
 void set_output(window_t*, OUTPUT_REQUEST);
 void set_window_OT_timer(window_t*, int);
 void turn_off_window_OT_timer(volatile FLAGS*);
+void set_central_open_timer(window_t*, int);
+void turn_off_central_open_timer(volatile FLAGS*);
 void set_authorization_request_flags(window_t*, unsigned char);
 
 // Output FSM input functions
@@ -166,8 +179,8 @@ unsigned char check_output_time_rollover(window_t*);
 // Use void set_output(window_t*, OUTPUT_REQUEST) to clear input flags
 void write_up(window_t*, unsigned char);
 void write_down(window_t*, unsigned char);
-void set_central_close_in_progress(volatile FLAGS*);
-void clear_central_close_in_progress(volatile FLAGS*);
+void set_central_open_close_in_progress(volatile FLAGS*);
+void clear_central_open_close_in_progress(volatile FLAGS*);
 void set_output_timer(window_t*, int);
 void turn_off_output_timer(volatile FLAGS*);
 

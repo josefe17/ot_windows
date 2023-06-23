@@ -29,14 +29,17 @@ void ot_window_init(window_t* current_window)
 	current_window -> current_state = IDLE;
 	current_window -> next_state = IDLE;
 	current_window -> ot_timer_counter = 0;
+	current_window -> central_open_timer_counter = 0;
 	current_window -> flags.up_sw = OFF;
 	current_window -> flags.down_sw = OFF;
 	current_window -> flags.up_rem_sw = OFF;
 	current_window -> flags.down_rem_sw = OFF;
 	current_window -> flags.cclose_in = OFF;
-	current_window -> flags.cclose_over = OFF;
+	current_window -> flags.c_open_close_over = OFF;
 	current_window -> flags.ot_timer_rollover = OFF;
 	current_window -> flags.ot_timer_enable = OFF;
+	current_window -> flags.central_open_timer_rollover = OFF;
+	current_window -> flags.central_open_timer_enable = OFF;
 	// Output FSM
 	current_window -> outputState = ZERO;
 	current_window -> outputNextState = ZERO;
@@ -59,6 +62,7 @@ void ot_window_run(window_t* current_window)
 {		
 	set_timer_flags(current_window);
 	read_port(current_window);	
+	central_open_fsm_fire(current_window);
 	window_fsm_fire(current_window);
 	authorization_fsm_fire(current_window);
 	output_fsm_fire(current_window);		
@@ -109,6 +113,14 @@ void set_timer_flags(window_t* current_window)
 			if (current_window -> authorization_timer_counter >= current_window -> authorization_timer_max_count)
 			{
 				current_window -> flags.authorization_timer_rollover = 1;
+			}
+		}
+		if(current_window -> flags.central_open_timer_enable)
+		{
+			current_window -> central_open_timer_counter++;
+			if (current_window -> central_open_timer_counter >= current_window -> central_open_timer_max_count)
+			{
+				current_window -> flags.central_open_timer_rollover = 1;
 			}
 		}
 		if(current_window -> flags.ot_timer_enable )
@@ -348,6 +360,15 @@ void read_port(window_t* current_window)
 	}
 }
 
+void central_open_fsm_fire(window_t* current_window)
+{
+	// Do not clear flags here as they are shared with window FSM
+	if (check_central_open_time_rollover(current_window))
+	{
+		turn_off_central_open_timer(&(current_window -> flags));
+	}
+}
+
 void window_fsm_fire(window_t* current_window)
 {
     current_window -> current_state = current_window -> next_state; // Updates state
@@ -364,13 +385,23 @@ void window_fsm_fire(window_t* current_window)
                 current_window -> next_state = IDLE;
 				break;
             }
-			if (check_all_released(current_window) && check_central_close(current_window)) // Central close
+			if (check_all_released(current_window) && check_central_close(current_window) && !check_central_open_valid(current_window)) // Central close
 			{
 				clear_window_fsm_input_flags(&(current_window->flags));
+				set_central_open_timer(current_window, CENTRAL_OPEN_TIMER_COUNT_MS); // Think where to turn it off -> asynchronously	
 				set_authorization_request_flags(current_window, ON);
 				set_output(current_window, UP_PRESSED);
 				current_window -> next_state = CENTRAL_CLOSE;
 				break;				
+			}
+			if (check_all_released(current_window) && check_central_close(current_window) && check_central_open_valid(current_window)) // Central open
+			{
+				clear_window_fsm_input_flags(&(current_window->flags));
+				turn_off_central_open_timer(&(current_window->flags));
+				set_authorization_request_flags(current_window, ON);
+				set_output(current_window, DOWN_PRESSED);
+				current_window -> next_state = CENTRAL_OPEN;
+				break;
 			}
             if (check_up_and_no_down(current_window)) //Up botton pressed
 			{
@@ -572,9 +603,16 @@ void window_fsm_fire(window_t* current_window)
 			current_window -> next_state = AUTHORIZATION_OFF;
 			break;
         }
-		case AUTHORIZATION_OFF: // Disables authorization override signal once auto-lift sequence is over (and thus valid)
+		case CENTRAL_OPEN: //Handles second part of button sequence for commanding auto-open mode
 		{
-			if (check_central_close_over(current_window) && // Required as up and down lines and authorization line are managed independently
+			clear_window_fsm_input_flags(&(current_window -> flags));
+			set_output(current_window, DOWN_RELEASED_AUTO);
+			current_window -> next_state = AUTHORIZATION_OFF;
+			break;
+		}
+		case AUTHORIZATION_OFF: // Disables authorization override signal once either auto-lift or auto_open sequences are over (and thus valid)
+		{
+			if (check_central_open_close_over(current_window) && // Required as up and down lines and authorization line are managed independently
 				check_no_central_close(current_window))  // To avoid retriggers while cclose line is low
 			{
 				clear_window_fsm_input_flags(&(current_window -> flags));
@@ -701,7 +739,7 @@ void output_fsm_fire(window_t* current_window)
 		{			
 			cache_output_request(current_window);
 			set_output(current_window, NONE);
-			clear_central_close_in_progress(&(current_window -> flags));
+			clear_central_open_close_in_progress(&(current_window -> flags));
 			if (check_output_request(current_window) == NONE) // CACHED
 			{
 				current_window -> outputNextState = ZERO;
@@ -729,12 +767,14 @@ void output_fsm_fire(window_t* current_window)
 				{
 					write_down(current_window, OFF);
 					// Semaphore for not releasing authorization before button releasing sequence is over in up mode
-					set_central_close_in_progress(&(current_window -> flags));
+					set_central_open_close_in_progress(&(current_window -> flags));
 					break;	
 				}
 				case DOWN_RELEASED_AUTO:
 				{
 					write_up(current_window, OFF);
+					// Semaphore for not releasing authorization before button releasing sequence is over in down mode
+					set_central_open_close_in_progress(&(current_window -> flags));
 					break;	
 				}
 				case UP_RELEASED_STOP:
@@ -853,8 +893,9 @@ void clear_window_fsm_input_flags(volatile FLAGS* flags)
 	//flags -> up_rem_sw = 0;
 	//flags -> down_rem_sw = 0;
 	//flags -> cclose_in = 0;
-	flags -> cclose_over = 0;
+	flags -> c_open_close_over = 0;
 	flags -> ot_timer_rollover = 0;
+	flags -> central_open_timer_rollover = 0;
 	return;
 }
 
@@ -943,9 +984,21 @@ unsigned char check_no_central_close(window_t* current_window)
 	return !(current_window -> flags).cclose_in;
 }
 
-unsigned char check_central_close_over(window_t* current_window)
+unsigned char check_central_open_close_over(window_t* current_window)
 {
-	return (current_window -> flags).cclose_over;
+	return (current_window -> flags).c_open_close_over;
+}
+
+unsigned char check_central_open_valid(window_t* current_window)
+{
+	return ((current_window -> flags).central_open_timer_enable && 
+		    !(current_window -> flags).central_open_timer_rollover);
+}
+
+// Central open FSM input functions
+unsigned char check_central_open_time_rollover(window_t* current_window)
+{
+	return (current_window -> flags).central_open_timer_rollover;
 }
 
 // Window FSM output functions
@@ -967,6 +1020,20 @@ void turn_off_window_OT_timer(volatile FLAGS* flags)
 {
 	flags -> ot_timer_enable = OFF;
 	return;
+}
+
+void set_central_open_timer(window_t* current_window, int time)
+{
+	current_window -> central_open_timer_max_count = time;
+	current_window -> central_open_timer_counter = 0;
+	current_window -> flags.central_open_timer_rollover = 0;
+	current_window -> flags.central_open_timer_enable = ON;
+	return;
+}
+
+void turn_off_central_open_timer(volatile FLAGS* flags)
+{
+	flags-> central_open_timer_enable = OFF;
 }
 
 void set_authorization_request_flags(window_t* current_window, unsigned char auth_state)
@@ -1032,14 +1099,14 @@ void write_down(window_t* current_window, unsigned char level)
 	}
 }
 
-void set_central_close_in_progress(volatile FLAGS* flags)
+void set_central_open_close_in_progress(volatile FLAGS* flags)
 {
-	flags -> cclose_over = 0;
+	flags -> c_open_close_over = 0;
 }
 
-void clear_central_close_in_progress(volatile FLAGS* flags)
+void clear_central_open_close_in_progress(volatile FLAGS* flags)
 {
-	flags -> cclose_over = 1;
+	flags -> c_open_close_over = 1;
 }
 
 void set_output_timer(window_t* current_window, int time)

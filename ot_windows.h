@@ -35,6 +35,7 @@ typedef enum _OUTPUT_REQUEST
 /* Authorization line FSM status*/
 typedef enum _AUTHORIZATION_FSM_STATE
 {
+	POWER_UP,
 	RELEASED,
 	ARMED,
 	OVERRIDE

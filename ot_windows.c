@@ -51,6 +51,7 @@ void ot_window_init(window_t* current_window)
 	current_window -> flags.authorization_in = OFF;
 	current_window -> flags.authorization_on = OFF;
 	current_window -> flags.authorization_off = OFF;
+	current_window -> flags.authorization_up_enabled = OFF;
 	current_window -> flags.authorization_timer_rollover = OFF;
 	current_window -> flags.authorization_timer_enable = OFF;	
 }
@@ -372,7 +373,7 @@ void window_fsm_fire(window_t* current_window)
 				current_window -> next_state = CENTRAL_CLOSE;
 				break;				
 			}
-            if (check_up_and_no_down(current_window)) //Up botton pressed
+            if (check_up_and_no_down(current_window) && check_up_enabled(current_window)) //Up botton pressed and not in power up mode
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
 				set_window_OT_timer(current_window, OT_TIMER_COUNT_MS);
@@ -380,6 +381,13 @@ void window_fsm_fire(window_t* current_window)
                 current_window -> next_state = MAN_UP;
 				break;
             }
+			if (check_up_and_no_down(current_window) && !check_up_enabled(current_window)) // Up pressed but in power up mode: do nothing (properly)
+			{
+				clear_window_fsm_input_flags(&(current_window -> flags));
+				turn_off_window_OT_timer(&(current_window -> flags));
+				current_window -> next_state = IDLE;
+				break;
+			}				
             if (check_down_and_no_up(current_window)) //Down botton pressed
 			{
                 clear_window_fsm_input_flags(&(current_window->flags));
@@ -603,6 +611,7 @@ void authorization_fsm_fire(window_t* current_window)
 				!check_authorization_override_request(current_window))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override off
 				write_authorization(current_window, OFF);
 				current_window -> authorizationNextState = RELEASED;
@@ -611,6 +620,7 @@ void authorization_fsm_fire(window_t* current_window)
 			if (check_authorization_input(current_window)) // Auth on
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				current_window -> authorizationNextState = ARMED;
@@ -620,6 +630,7 @@ void authorization_fsm_fire(window_t* current_window)
 				check_authorization_override_request(current_window))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
@@ -633,6 +644,7 @@ void authorization_fsm_fire(window_t* current_window)
 			!check_authorization_override_request(current_window))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				disable_up(current_window);
 				//turn auth override off
 				write_authorization(current_window, ON);
 				current_window -> authorizationNextState = POWER_UP;
@@ -641,6 +653,7 @@ void authorization_fsm_fire(window_t* current_window)
 			if (check_authorization_input(current_window)) // Auth on
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				current_window -> authorizationNextState = ARMED;
@@ -650,6 +663,7 @@ void authorization_fsm_fire(window_t* current_window)
 			check_authorization_override_request(current_window))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
@@ -662,6 +676,7 @@ void authorization_fsm_fire(window_t* current_window)
 			if (check_authorization_input(current_window)) // Auth on
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				current_window -> authorizationNextState = ARMED;
@@ -670,6 +685,7 @@ void authorization_fsm_fire(window_t* current_window)
 			else
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
@@ -682,6 +698,7 @@ void authorization_fsm_fire(window_t* current_window)
 			if (check_authorization_input(current_window)) //BCM auth returns
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				turn_off_authorization_timer(&(current_window -> flags));
@@ -691,6 +708,7 @@ void authorization_fsm_fire(window_t* current_window)
 			if (check_authorization_override_request(current_window)) // Central close request, timeout restarts
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				set_authorization_timer(current_window, AUTHORIZATION_EXTENSION_TIME_MS);
@@ -701,6 +719,7 @@ void authorization_fsm_fire(window_t* current_window)
 				(check_authorization_time_rollover(current_window) || check_authorization_release_request(current_window)))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override off
 				write_authorization(current_window, OFF);
 				turn_off_authorization_timer(&(current_window -> flags));
@@ -712,6 +731,7 @@ void authorization_fsm_fire(window_t* current_window)
 				!check_authorization_release_request(current_window))
 			{
 				clear_authorization_fsm_input_flags(&(current_window -> flags));
+				enable_up(current_window);
 				//turn auth override on
 				write_authorization(current_window, ON);
 				current_window -> authorizationNextState = OVERRIDE;
@@ -958,6 +978,11 @@ unsigned char check_mismatch_auto_down(window_t* current_window)
 	((current_window->flags).up_rem_sw && (current_window->flags).down_rem_sw && !(current_window->flags).down_sw &&  (current_window->flags).up_sw));
 }
 
+unsigned char check_up_enabled(window_t* current_window)
+{
+	return (current_window -> flags).authorization_up_enabled;
+}
+
 unsigned char check_ot_time_rollover(window_t* current_window)
 {
 	return (current_window -> flags).ot_timer_rollover;
@@ -1117,6 +1142,16 @@ unsigned char check_authorization_time_rollover(window_t* current_window)
 }
 
 // Authorization FSM output functions
+void enable_up(window_t* current_window)
+{
+	(current_window ->flags).authorization_up_enabled = 1;
+}
+
+void disable_up(window_t* current_window)
+{
+	(current_window -> flags).authorization_up_enabled = 0;
+}
+
 void write_authorization(window_t* current_window, unsigned char level)
 {
 	// Automotive line is active low

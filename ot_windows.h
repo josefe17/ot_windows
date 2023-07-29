@@ -75,6 +75,7 @@ typedef struct _FLAGS
 	unsigned char authorization_in: 1;
 	unsigned char authorization_on: 1;
 	unsigned char authorization_off: 1;
+	unsigned char authorization_up_enabled: 1;
     unsigned char ot_timer_rollover : 1;
     unsigned char ot_timer_enable : 1;
 	unsigned char output_timer_rollover: 1;
@@ -147,6 +148,7 @@ unsigned char check_down(window_t*); // same as pink for down
 unsigned char check_mismatch(window_t*);
 unsigned char check_mismatch_auto_up(window_t*);
 unsigned char check_mismatch_auto_down(window_t*);
+unsigned char check_up_enabled(window_t*);
 unsigned char check_ot_time_rollover(window_t*);
 unsigned char check_central_close(window_t*);
 unsigned char check_no_central_close(window_t*);
@@ -180,6 +182,8 @@ unsigned char check_authorization_release_request(window_t*);
 unsigned char check_authorization_time_rollover(window_t*);
 
 // Authorization FSM output functions
+void enable_up(window_t*);
+void disable_up(window_t*);
 void write_authorization(window_t*, unsigned char);
 void set_authorization_timer(window_t*, int);
 void turn_off_authorization_timer(volatile FLAGS*);
